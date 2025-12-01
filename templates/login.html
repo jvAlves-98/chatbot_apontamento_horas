@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Chatbot</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-box">
+            <h1>⏱️ Booker Login</h1>
+            <p class="subtitle">Entre para apontar suas horas</p>
+            
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="usuario">Usuário</label>
+                    <input type="text" id="usuario" name="usuario" required autofocus>
+                </div>
+                
+                <div class="form-group">
+                    <label for="senha">Senha</label>
+                    <input type="password" id="senha" name="senha" required>
+                </div>
+                
+                <div id="mensagemErro" class="error-message" style="display: none;"></div>
+                
+                <button type="submit" class="btn-primary">Entrar</button>
+            </form>
+            
+            <div class="footer-text">
+                <p>Usuários de teste:</p>
+                <p><strong>admin</strong> / admin123</p>
+                <p><strong>usuario</strong> / senha123</p>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/static/js/login.js"></script>
+</body>
+</html>

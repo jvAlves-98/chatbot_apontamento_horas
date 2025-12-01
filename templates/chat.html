@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat - Chatbot</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <div class="header-content">
+                <h1>⏱️ Booker Apontamento de Horas</h1>
+                <div class="user-info">
+                    <span id="nomeUsuario">{{ usuario }}</span>
+                    <button id="btnLogout" class="btn-logout">Sair</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chat-messages" id="chatMessages">
+            <div class="message bot-message">
+                <div class="message-content">
+                    <strong>Assistente:</strong>
+                    <p>👋 Bem-vindo ao Assistente de Apontamento de Horas!</p>
+                    <p>Estou aqui para ajudar você a registrar suas atividades profissionais.</p>
+                    <br>
+                    <p><strong>📝 Como usar:</strong></p>
+                    <p>🚀 <strong>Iniciar uma tarefa:</strong> "Iniciar [nome da tarefa]"<br>
+                    <em>Exemplo:</em> "Iniciar reunião com cliente ABC"</p>
+                    <p>⏹️ <strong>Finalizar tarefa:</strong> "Finalizar", "Parar" ou "Terminar"</p>
+                    <p>📊 <strong>Consultar horas:</strong> "Quanto eu trabalhei hoje?"</p>
+                    <p>📋 <strong>Ver histórico:</strong> "Mostrar meu histórico"</p>
+                    <br>
+                    <p>💡 O que você gostaria de fazer agora?</p>
+                </div>
+                <div class="message-time"></div>
+            </div>
+        </div>
+        
+        <div class="chat-input-container">
+            <form id="chatForm">
+                <div class="input-wrapper">
+                    <input 
+                        type="text" 
+                        id="mensagemInput" 
+                        placeholder="Digite sua mensagem..." 
+                        autocomplete="off"
+                        required
+                    >
+                    <button type="submit" class="btn-send">Enviar</button>
+                </div>
+            </form>
+        </div>
+        
+        <div id="typing-indicator" class="typing-indicator" style="display: none;">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+    </div>
+    
+    <script src="/static/js/chat.js"></script>
+</body>
+</html>
