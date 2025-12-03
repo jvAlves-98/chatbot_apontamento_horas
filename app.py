@@ -4,21 +4,92 @@ import requests
 import os
 from datetime import timedelta
 import hashlib
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from dotenv import load_dotenv
+
+# Carregar variáveis de ambiente do arquivo .env
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(dotenv_path)
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)  # Chave secreta para sessões
+app.secret_key = os.urandom(24)
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=2)
 CORS(app)
 
-# Banco de dados simples (em produção, use um banco real)
-# Senhas devem ser hash em produção real
-usuarios = {
-    "admin": hashlib.sha256("admin123".encode()).hexdigest(),
-    "usuario": hashlib.sha256("senha123".encode()).hexdigest()
+# Configurações do Banco de Dados PostgreSQL
+DB_CONFIG = {
+    'host': os.getenv('HOST_DW'),
+    'database': os.getenv('DBNAME_DW'),
+    'user': os.getenv('USER_DW'),
+    'password': os.getenv('PASS_DW'),
+    'port': os.getenv('PORT_DW', '5432'),
+    'options': '-c search_path=apontador_horas,public'
 }
 
 # URL do webhook do n8n - SUBSTITUA pela sua URL real
-N8N_WEBHOOK_URL = "https://joaoalvesn8n.app.n8n.cloud/webhook/a8d390dc-053e-4f22-9c7e-d0525ce6d8f2/chat"
+N8N_WEBHOOK_URL = "https://n8n.bookerbrasil.com/webhook/9d8f9a85-c21d-4aed-bd52-124af0d116c3/chat"
+
+def get_db_connection():
+    """Cria uma conexão com o banco de dados PostgreSQL"""
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        return conn
+    except Exception as e:
+        print(f"❌ Erro ao conectar no banco: {e}")
+        return None
+
+def hash_senha(senha):
+    """Gera hash SHA-256 da senha"""
+    return hashlib.sha256(senha.encode()).hexdigest()
+
+def verificar_usuario(usuario, senha):
+    """Verifica se usuário e senha estão corretos no banco de dados"""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Buscar usuário primeiro
+        cursor.execute("""
+            SELECT id, usuario, senha_hash, nome_completo, email, departamento, nivel, ativo
+            FROM funcionarios
+            WHERE usuario = %s
+        """, (usuario,))
+        
+        user = cursor.fetchone()
+        
+        if not user:
+            print(f"❌ Usuário '{usuario}' não encontrado")
+            return None
+        
+        if not user['ativo']:
+            print(f"❌ Usuário '{usuario}' está inativo")
+            return None
+        
+        # Gerar hash da senha fornecida
+        senha_hash = hash_senha(senha)
+        
+        print(f"🔐 Hash gerado: {senha_hash}")
+        print(f"🔐 Hash no banco: {user['senha_hash']}")
+        
+        # Comparar os hashes
+        if user['senha_hash'] == senha_hash:
+            print(f"✅ Login válido para '{usuario}'")
+            return user
+        else:
+            print(f"❌ Senha incorreta para '{usuario}'")
+            return None
+        
+    except Exception as e:
+        print(f"❌ Erro ao verificar usuário: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+    finally:
+        conn.close()
 
 @app.route('/')
 def index():
@@ -39,10 +110,14 @@ def login():
     if not usuario or not senha:
         return jsonify({'success': False, 'message': 'Usuário e senha são obrigatórios'}), 400
     
-    senha_hash = hashlib.sha256(senha.encode()).hexdigest()
+    user = verificar_usuario(usuario, senha)
     
-    if usuario in usuarios and usuarios[usuario] == senha_hash:
-        session['usuario'] = usuario
+    if user:
+        session['usuario'] = user['usuario']
+        session['usuario_id'] = user['id']
+        session['nome_completo'] = user['nome_completo']
+        session['nivel'] = user['nivel']
+        session['departamento'] = user['departamento']
         session.permanent = True
         return jsonify({'success': True, 'message': 'Login realizado com sucesso'})
     
@@ -50,7 +125,7 @@ def login():
 
 @app.route('/api/logout', methods=['POST'])
 def logout():
-    session.pop('usuario', None)
+    session.clear()
     return jsonify({'success': True})
 
 @app.route('/api/chat', methods=['POST'])
@@ -61,23 +136,25 @@ def chat():
     dados = request.get_json()
     mensagem = dados.get('mensagem')
     usuario = session.get('usuario')
+    nome_completo = session.get('nome_completo')
+    usuario_id = session.get('usuario_id')
     
     if not mensagem:
         return jsonify({'success': False, 'message': 'Mensagem vazia'}), 400
     
     try:
         # Enviar mensagem para o n8n AI Agent
-        # IMPORTANTE: O AI Agent espera o campo 'chatInput'
         payload = {
-            'chatInput': mensagem,  # Campo que o AI Agent reconhece
-            'usuario': usuario       # Informação extra do usuário
+            'chatInput': mensagem,
+            'usuario': usuario,
+            'nome_completo': nome_completo,
+            'usuario_id': usuario_id
         }
         
-        print(f"📤 Enviando para n8n: {payload}")  # Debug
+        print(f"📤 Enviando para n8n: {payload}")
         
         response = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=30)
         
-        # Verificar se a requisição foi bem sucedida
         if response.status_code != 200:
             print(f"❌ Erro HTTP {response.status_code}: {response.text}")
             return jsonify({
@@ -86,22 +163,20 @@ def chat():
             }), 500
         
         data = response.json()
-        print(f"📥 Resposta do n8n: {data}")  # Debug
+        print(f"📥 Resposta do n8n: {data}")
         
-        # O AI Agent pode retornar em diferentes formatos
+        # Processar resposta do AI Agent
         resposta_bot = None
         
         if isinstance(data, dict):
-            # Tenta diferentes campos possíveis que o n8n/AI Agent pode retornar
             resposta_bot = (
-                data.get('output') or      # Formato comum do AI Agent
-                data.get('text') or        # Formato alternativo
-                data.get('response') or    # Outro formato possível
-                data.get('resposta') or    # Formato customizado
-                data.get('message')        # Outro formato
+                data.get('output') or
+                data.get('text') or
+                data.get('response') or
+                data.get('resposta') or
+                data.get('message')
             )
             
-            # Se ainda não encontrou, tenta acessar estruturas aninhadas
             if not resposta_bot and 'data' in data:
                 if isinstance(data['data'], dict):
                     resposta_bot = data['data'].get('output') or data['data'].get('text')
@@ -109,14 +184,13 @@ def chat():
                     resposta_bot = data['data']
                     
         elif isinstance(data, str):
-            # Se a resposta é uma string direta
             resposta_bot = data
         
         if not resposta_bot:
             print(f"⚠️ Formato de resposta desconhecido. Dados recebidos: {data}")
             resposta_bot = 'Desculpe, recebi uma resposta em formato inesperado do servidor.'
         
-        print(f"✅ Resposta processada: {resposta_bot[:100]}...")  # Debug (primeiros 100 chars)
+        print(f"✅ Resposta processada: {resposta_bot[:100]}...")
         
         return jsonify({
             'success': True,
@@ -151,22 +225,29 @@ def chat():
             'message': f'Erro ao processar resposta: {str(e)}'
         }), 500
 
-@app.route('/api/registrar', methods=['POST'])
-def registrar():
-    dados = request.get_json()
-    usuario = dados.get('usuario')
-    senha = dados.get('senha')
+@app.route('/api/usuario-info', methods=['GET'])
+def usuario_info():
+    """Retorna informações do usuário logado"""
+    if 'usuario' not in session:
+        return jsonify({'success': False, 'message': 'Não autenticado'}), 401
     
-    if not usuario or not senha:
-        return jsonify({'success': False, 'message': 'Usuário e senha são obrigatórios'}), 400
-    
-    if usuario in usuarios:
-        return jsonify({'success': False, 'message': 'Usuário já existe'}), 400
-    
-    senha_hash = hashlib.sha256(senha.encode()).hexdigest()
-    usuarios[usuario] = senha_hash
-    
-    return jsonify({'success': True, 'message': 'Usuário registrado com sucesso'})
+    return jsonify({
+        'success': True,
+        'usuario': session.get('usuario'),
+        'nome_completo': session.get('nome_completo'),
+        'nivel': session.get('nivel'),
+        'departamento': session.get('departamento')
+    })
 
 if __name__ == '__main__':
+    # Teste de conexão ao iniciar
+    print("🔍 Testando conexão com banco de dados...")
+    conn = get_db_connection()
+    if conn:
+        print("✅ Conexão com PostgreSQL estabelecida!")
+        conn.close()
+    else:
+        print("⚠️ AVISO: Não foi possível conectar ao banco de dados!")
+        print("Configure as variáveis de ambiente: DB_HOST, DB_NAME, DB_USER, DB_PASSWORD")
+    
     app.run(debug=True, host='0.0.0.0', port=5000)

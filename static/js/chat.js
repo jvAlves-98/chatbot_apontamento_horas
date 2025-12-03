@@ -18,6 +18,9 @@ function adicionarMensagem(texto, tipo, tempo = new Date()) {
     const p = document.createElement('p');
     p.textContent = texto;
     
+    // Adicione esta linha logo abaixo:
+    p.style.whiteSpace = 'pre-line';
+
     contentDiv.appendChild(strong);
     contentDiv.appendChild(p);
     
