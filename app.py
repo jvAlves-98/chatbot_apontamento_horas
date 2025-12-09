@@ -223,7 +223,6 @@ def buscar_tarefas():
     try:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
-        # ✅ CORRIGIDO: Agora retorna o ID da tarefa
         cursor.execute("""
             SELECT 
                 id,
@@ -258,7 +257,7 @@ def buscar_tarefas():
         conn.close()
 
 # ========================================
-# ROTAS DE CONTROLE DE TAREFAS
+# ROTAS DE CONTROLE DE TAREFAS (MÚLTIPLAS)
 # ========================================
 
 @app.route('/api/iniciar-tarefa', methods=['POST'])
@@ -270,8 +269,8 @@ def iniciar_tarefa():
     dados = request.get_json()
     cnpj_cliente = dados.get('cnpj_cliente')
     nome_cliente = dados.get('nome_cliente')
-    tarefa_id = dados.get('tarefa_id')  # ✅ CORRIGIDO: Recebe tarefa_id
-    nome_tarefa = dados.get('nome_tarefa')  # Para log apenas
+    tarefa_id = dados.get('tarefa_id')
+    nome_tarefa = dados.get('nome_tarefa')
     usuario = session.get('usuario')
     
     if not all([cnpj_cliente, tarefa_id]):
@@ -284,20 +283,6 @@ def iniciar_tarefa():
     try:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
-        # Verificar se já tem tarefa ativa
-        cursor.execute("""
-            SELECT COUNT(*) as count
-            FROM apontamentos_horas a
-            INNER JOIN funcionarios f ON a.funcionario_id = f.id
-            WHERE f.usuario = %s
-              AND a.status IN ('em_andamento', 'pausado')
-        """, (usuario,))
-        
-        result = cursor.fetchone()
-        if result['count'] > 0:
-            return jsonify({'success': False, 'message': 'Você já tem uma tarefa ativa'}), 400
-        
-        # ✅ CORRIGIDO: Usar tarefa_id ao invés de nome_tarefa
         cursor.execute("""
             WITH ids_resolvidos AS (
                 SELECT 
@@ -353,9 +338,15 @@ def iniciar_tarefa():
 
 @app.route('/api/pausar-tarefa', methods=['POST'])
 def pausar_tarefa():
-    """Pausa a tarefa ativa"""
+    """Pausa uma tarefa específica"""
     if 'usuario' not in session:
         return jsonify({'success': False, 'message': 'Não autenticado'}), 401
+    
+    dados = request.get_json()
+    apontamento_id = dados.get('apontamento_id')
+    
+    if not apontamento_id:
+        return jsonify({'success': False, 'message': 'ID da tarefa não fornecido'}), 400
     
     usuario = session.get('usuario')
     
@@ -366,43 +357,34 @@ def pausar_tarefa():
     try:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
+        # Verificar se a tarefa pertence ao usuário
         cursor.execute("""
-            WITH tarefa_atual AS (
-                SELECT a.id AS apontamento_id
-                FROM apontamentos_horas a
-                INNER JOIN funcionarios f ON a.funcionario_id = f.id
-                WHERE f.usuario = %s
-                  AND a.status = 'em_andamento'
-                ORDER BY a.data_inicio DESC
-                LIMIT 1
-            ),
-            atualizar_status AS (
-                UPDATE apontamentos_horas
-                SET status = 'pausado',
-                    atualizado_em = NOW()
-                WHERE id = (SELECT apontamento_id FROM tarefa_atual)
-                RETURNING id
-            ),
-            inserir_pausa AS (
-                INSERT INTO pausas (apontamento_id, data_pausa)
-                SELECT apontamento_id, NOW()
-                FROM tarefa_atual
-                RETURNING id, TO_CHAR(data_pausa AT TIME ZONE 'America/Sao_Paulo', 'HH24:MI:SS') AS horario_pausa
-            )
-            SELECT 
-                CASE WHEN EXISTS(SELECT 1 FROM atualizar_status) THEN true ELSE false END AS sucesso,
-                p.horario_pausa
-            FROM inserir_pausa p
-        """, (usuario,))
+            SELECT a.id 
+            FROM apontamentos_horas a
+            INNER JOIN funcionarios f ON a.funcionario_id = f.id
+            WHERE a.id = %s AND f.usuario = %s AND a.status = 'em_andamento'
+        """, (apontamento_id, usuario))
         
-        resultado = cursor.fetchone()
+        if not cursor.fetchone():
+            return jsonify({'success': False, 'message': 'Tarefa não encontrada ou não pode ser pausada'}), 400
+        
+        # Pausar tarefa
+        cursor.execute("""
+            UPDATE apontamentos_horas
+            SET status = 'pausado', atualizado_em = NOW()
+            WHERE id = %s
+        """, (apontamento_id,))
+        
+        # Criar registro de pausa
+        cursor.execute("""
+            INSERT INTO pausas (apontamento_id, data_pausa)
+            VALUES (%s, NOW())
+        """, (apontamento_id,))
+        
         conn.commit()
         
-        if resultado and resultado['sucesso']:
-            print(f"⏸️ Tarefa pausada: {usuario}")
-            return jsonify({'success': True, 'horario_pausa': resultado['horario_pausa']})
-        else:
-            return jsonify({'success': False, 'message': 'Nenhuma tarefa ativa para pausar'}), 400
+        print(f"⏸️ Tarefa {apontamento_id} pausada: {usuario}")
+        return jsonify({'success': True})
         
     except Exception as e:
         conn.rollback()
@@ -413,9 +395,15 @@ def pausar_tarefa():
 
 @app.route('/api/retomar-tarefa', methods=['POST'])
 def retomar_tarefa():
-    """Retoma a tarefa pausada"""
+    """Retoma uma tarefa específica"""
     if 'usuario' not in session:
         return jsonify({'success': False, 'message': 'Não autenticado'}), 401
+    
+    dados = request.get_json()
+    apontamento_id = dados.get('apontamento_id')
+    
+    if not apontamento_id:
+        return jsonify({'success': False, 'message': 'ID da tarefa não fornecido'}), 400
     
     usuario = session.get('usuario')
     
@@ -426,48 +414,35 @@ def retomar_tarefa():
     try:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
+        # Verificar se a tarefa pertence ao usuário
         cursor.execute("""
-            WITH tarefa_pausada AS (
-                SELECT 
-                    a.id AS apontamento_id,
-                    (SELECT p.id FROM pausas p 
-                     WHERE p.apontamento_id = a.id 
-                       AND p.data_retomada IS NULL 
-                     LIMIT 1) AS pausa_id
-                FROM apontamentos_horas a
-                INNER JOIN funcionarios f ON a.funcionario_id = f.id
-                WHERE f.usuario = %s
-                  AND a.status = 'pausado'
-                ORDER BY a.data_inicio DESC
-                LIMIT 1
-            ),
-            fechar_pausa AS (
-                UPDATE pausas
-                SET data_retomada = NOW()
-                WHERE id = (SELECT pausa_id FROM tarefa_pausada)
-                RETURNING TO_CHAR(data_retomada AT TIME ZONE 'America/Sao_Paulo', 'HH24:MI:SS') AS horario_retomada
-            ),
-            atualizar_status AS (
-                UPDATE apontamentos_horas
-                SET status = 'em_andamento',
-                    atualizado_em = NOW()
-                WHERE id = (SELECT apontamento_id FROM tarefa_pausada)
-                RETURNING id
-            )
-            SELECT 
-                CASE WHEN EXISTS(SELECT 1 FROM atualizar_status) THEN true ELSE false END AS sucesso,
-                p.horario_retomada
-            FROM fechar_pausa p
-        """, (usuario,))
+            SELECT a.id 
+            FROM apontamentos_horas a
+            INNER JOIN funcionarios f ON a.funcionario_id = f.id
+            WHERE a.id = %s AND f.usuario = %s AND a.status = 'pausado'
+        """, (apontamento_id, usuario))
         
-        resultado = cursor.fetchone()
+        if not cursor.fetchone():
+            return jsonify({'success': False, 'message': 'Tarefa não encontrada ou não está pausada'}), 400
+        
+        # Fechar pausa atual
+        cursor.execute("""
+            UPDATE pausas
+            SET data_retomada = NOW()
+            WHERE apontamento_id = %s AND data_retomada IS NULL
+        """, (apontamento_id,))
+        
+        # Retomar tarefa
+        cursor.execute("""
+            UPDATE apontamentos_horas
+            SET status = 'em_andamento', atualizado_em = NOW()
+            WHERE id = %s
+        """, (apontamento_id,))
+        
         conn.commit()
         
-        if resultado and resultado['sucesso']:
-            print(f"▶️ Tarefa retomada: {usuario}")
-            return jsonify({'success': True, 'horario_retomada': resultado['horario_retomada']})
-        else:
-            return jsonify({'success': False, 'message': 'Nenhuma tarefa pausada para retomar'}), 400
+        print(f"▶️ Tarefa {apontamento_id} retomada: {usuario}")
+        return jsonify({'success': True})
         
     except Exception as e:
         conn.rollback()
@@ -478,9 +453,15 @@ def retomar_tarefa():
 
 @app.route('/api/finalizar-tarefa', methods=['POST'])
 def finalizar_tarefa():
-    """Finaliza a tarefa ativa"""
+    """Finaliza uma tarefa específica"""
     if 'usuario' not in session:
         return jsonify({'success': False, 'message': 'Não autenticado'}), 401
+    
+    dados = request.get_json()
+    apontamento_id = dados.get('apontamento_id')
+    
+    if not apontamento_id:
+        return jsonify({'success': False, 'message': 'ID da tarefa não fornecido'}), 400
     
     usuario = session.get('usuario')
     
@@ -491,79 +472,60 @@ def finalizar_tarefa():
     try:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
+        # Verificar se a tarefa pertence ao usuário
         cursor.execute("""
-            WITH tarefa_ativa AS (
-                SELECT 
-                    a.id AS apontamento_id,
-                    (SELECT p.id FROM pausas p 
-                     WHERE p.apontamento_id = a.id 
-                       AND p.data_retomada IS NULL 
-                     LIMIT 1) AS pausa_aberta_id
-                FROM apontamentos_horas a
-                INNER JOIN funcionarios f ON a.funcionario_id = f.id
-                WHERE f.usuario = %s
-                  AND a.status IN ('em_andamento', 'pausado')
-                ORDER BY a.data_inicio DESC
-                LIMIT 1
-            ),
-            fechar_pausa_se_existe AS (
-                UPDATE pausas
-                SET data_retomada = NOW()
-                WHERE id = (SELECT pausa_aberta_id FROM tarefa_ativa WHERE pausa_aberta_id IS NOT NULL)
-                RETURNING id
-            ),
-            finalizar AS (
-                UPDATE apontamentos_horas
-                SET data_fim = NOW(),
-                    status = 'finalizado',
-                    atualizado_em = NOW()
-                WHERE id = (SELECT apontamento_id FROM tarefa_ativa)
-                RETURNING 
-                    id,
-                    data_inicio,
-                    data_fim,
-                    TO_CHAR(data_fim AT TIME ZONE 'America/Sao_Paulo', 'HH24:MI:SS') AS horario_fim
-            ),
-            calcular_tempos AS (
-                SELECT 
-                    f.id,
-                    f.horario_fim,
-                    EXTRACT(EPOCH FROM (f.data_fim - t.data_inicio))/3600 AS horas_totais,
-                    COALESCE(
-                        (SELECT SUM(EXTRACT(EPOCH FROM (
-                            COALESCE(p.data_retomada, NOW()) - p.data_pausa
-                        )))/3600
-                        FROM pausas p
-                        WHERE p.apontamento_id = (SELECT apontamento_id FROM tarefa_ativa)),
-                        0
-                    ) AS horas_pausadas
-                FROM finalizar f
-                CROSS JOIN (SELECT data_inicio FROM apontamentos_horas 
-                           WHERE id = (SELECT apontamento_id FROM tarefa_ativa)) t
-            )
-            SELECT 
-                CASE WHEN EXISTS(SELECT 1 FROM finalizar) THEN true ELSE false END AS sucesso,
-                c.horario_fim,
-                ROUND(c.horas_totais::numeric, 2) AS horas_totais,
-                ROUND(c.horas_pausadas::numeric, 2) AS horas_pausadas,
-                ROUND((c.horas_totais - c.horas_pausadas)::numeric, 2) AS horas_trabalhadas
-            FROM calcular_tempos c
-        """, (usuario,))
+            SELECT a.id 
+            FROM apontamentos_horas a
+            INNER JOIN funcionarios f ON a.funcionario_id = f.id
+            WHERE a.id = %s AND f.usuario = %s AND a.status IN ('em_andamento', 'pausado')
+        """, (apontamento_id, usuario))
         
-        resultado = cursor.fetchone()
+        if not cursor.fetchone():
+            return jsonify({'success': False, 'message': 'Tarefa não encontrada ou já finalizada'}), 400
+        
+        # Fechar pausa se existir
+        cursor.execute("""
+            UPDATE pausas
+            SET data_retomada = NOW()
+            WHERE apontamento_id = %s AND data_retomada IS NULL
+        """, (apontamento_id,))
+        
+        # Finalizar tarefa
+        cursor.execute("""
+            UPDATE apontamentos_horas
+            SET data_fim = NOW(), 
+                status = 'finalizado', 
+                atualizado_em = NOW()
+            WHERE id = %s
+            RETURNING data_inicio, data_fim
+        """, (apontamento_id,))
+        
+        tarefa = cursor.fetchone()
+        
+        # Calcular horas
+        cursor.execute("""
+            SELECT 
+                EXTRACT(EPOCH FROM (%s - %s))/3600 AS horas_totais,
+                COALESCE(
+                    (SELECT SUM(EXTRACT(EPOCH FROM (
+                        COALESCE(p.data_retomada, NOW()) - p.data_pausa
+                    )))/3600
+                    FROM pausas p
+                    WHERE p.apontamento_id = %s),
+                    0
+                ) AS horas_pausadas
+        """, (tarefa['data_fim'], tarefa['data_inicio'], apontamento_id))
+        
+        tempos = cursor.fetchone()
+        horas_trabalhadas = tempos['horas_totais'] - tempos['horas_pausadas']
+        
         conn.commit()
         
-        if resultado and resultado['sucesso']:
-            print(f"✅ Tarefa finalizada: {usuario} | {resultado['horas_trabalhadas']}h")
-            return jsonify({
-                'success': True,
-                'horario_fim': resultado['horario_fim'],
-                'horas_totais': float(resultado['horas_totais']),
-                'horas_pausadas': float(resultado['horas_pausadas']),
-                'horas_trabalhadas': float(resultado['horas_trabalhadas'])
-            })
-        else:
-            return jsonify({'success': False, 'message': 'Nenhuma tarefa ativa para finalizar'}), 400
+        print(f"✅ Tarefa {apontamento_id} finalizada: {usuario} | {horas_trabalhadas:.2f}h")
+        return jsonify({
+            'success': True,
+            'horas_trabalhadas': round(horas_trabalhadas, 2)
+        })
         
     except Exception as e:
         conn.rollback()
@@ -574,9 +536,9 @@ def finalizar_tarefa():
     finally:
         conn.close()
 
-@app.route('/api/verificar-tarefa-ativa', methods=['GET'])
-def verificar_tarefa_ativa():
-    """Verifica se o usuário tem tarefa ativa"""
+@app.route('/api/verificar-tarefas-ativas', methods=['GET'])
+def verificar_tarefas_ativas():
+    """Verifica TODAS as tarefas ativas do usuário"""
     if 'usuario' not in session:
         return jsonify({'success': False, 'message': 'Não autenticado'}), 401
     
@@ -589,7 +551,6 @@ def verificar_tarefa_ativa():
     try:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
-        # ✅ CORRIGIDO: JOIN com tarefas_colaborador para buscar nome_tarefa
         cursor.execute("""
             SELECT 
                 a.id AS apontamento_id,
@@ -623,33 +584,17 @@ def verificar_tarefa_ativa():
             WHERE f.usuario = %s
               AND a.status IN ('em_andamento', 'pausado')
             ORDER BY a.data_inicio DESC
-            LIMIT 1
         """, (usuario,))
         
-        tarefa = cursor.fetchone()
+        tarefas = cursor.fetchall()
         
-        if tarefa:
-            return jsonify({
-                'success': True,
-                'tem_tarefa_ativa': True,
-                'apontamento_id': tarefa['apontamento_id'],
-                'status': tarefa['status'],
-                'cliente_nome': tarefa['cliente_nome'],
-                'cnpj': tarefa['cnpj'],
-                'tarefa_nome': tarefa['tarefa_nome'],
-                'tarefa_id': tarefa['tarefa_id'],
-                'data_inicio': tarefa['data_inicio'],
-                'data_pausa': tarefa['data_pausa'],
-                'tempo_pausado_ms': int(tarefa['tempo_pausado_ms'])
-            })
-        else:
-            return jsonify({
-                'success': True,
-                'tem_tarefa_ativa': False
-            })
+        return jsonify({
+            'success': True,
+            'tarefas': [dict(t) for t in tarefas]
+        })
         
     except Exception as e:
-        print(f"❌ Erro ao verificar tarefa ativa: {e}")
+        print(f"❌ Erro ao verificar tarefas ativas: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': str(e)}), 500

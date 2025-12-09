@@ -73,134 +73,7 @@ body {
     overflow-y: auto;
 }
 
-/* Card de Status da Tarefa */
-.task-status-card {
-    background: white;
-    border-radius: 12px;
-    padding: 25px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.task-status-card h3 {
-    margin-bottom: 20px;
-    color: #3F3F41;
-    font-size: 20px;
-    border-bottom: 2px solid #FFD500;
-    padding-bottom: 10px;
-}
-
-.no-task-message {
-    text-align: center;
-    padding: 40px 20px;
-    color: #666;
-}
-
-.no-task-message p {
-    margin: 10px 0;
-    font-size: 16px;
-}
-
-.small-text {
-    font-size: 13px;
-    color: #999;
-}
-
-/* Tarefa Ativa */
-.active-task {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-}
-
-.task-info {
-    background: #f8f8f8;
-    border-radius: 8px;
-    padding: 20px;
-}
-
-.info-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 12px 0;
-    border-bottom: 1px solid #e0e0e0;
-}
-
-.info-row:last-child {
-    border-bottom: none;
-}
-
-.info-row .label {
-    font-weight: 600;
-    color: #666;
-    font-size: 14px;
-}
-
-.info-row .value {
-    font-weight: 500;
-    color: #3F3F41;
-    font-size: 14px;
-    text-align: right;
-    max-width: 60%;
-}
-
-.info-row .timer {
-    font-size: 20px;
-    font-weight: 700;
-    color: #E59230;
-    font-family: 'Courier New', monospace;
-}
-
-/* Controles da Tarefa */
-.task-controls {
-    display: flex;
-    gap: 12px;
-    justify-content: stretch;
-}
-
-.btn-control {
-    flex: 1;
-    padding: 14px 20px;
-    border: none;
-    border-radius: 8px;
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s;
-}
-
-.btn-pause {
-    background: #FFA500;
-    color: white;
-}
-
-.btn-pause:hover {
-    background: #FF8C00;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(255, 165, 0, 0.3);
-}
-
-.btn-resume {
-    background: #4CAF50;
-    color: white;
-}
-
-.btn-resume:hover {
-    background: #45a049;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
-}
-
-.btn-finish {
-    background: linear-gradient(135deg, #FFD500 0%, #E59230 100%);
-    color: #3F3F41;
-}
-
-.btn-finish:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(255, 213, 0, 0.4);
-}
-
-/* Card de SeleÃ§Ã£o de Tarefa */
+/* ===== CARD DE SELEÇÃO DE TAREFA ===== */
 .task-selection-card {
     background: white;
     border-radius: 12px;
@@ -335,7 +208,7 @@ body {
     background: rgba(63, 63, 65, 0.4);
 }
 
-/* BotÃ£o Iniciar */
+/* Botão Iniciar */
 .btn-start {
     width: 100%;
     padding: 16px;
@@ -359,6 +232,185 @@ body {
     background: #cccccc;
     cursor: not-allowed;
     transform: none;
+}
+
+/* ===== SEÇÃO DE TAREFAS ATIVAS (NOVO - CARDS MINIMALISTAS) ===== */
+.tasks-status-section {
+    background: white;
+    border-radius: 12px;
+    padding: 25px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.tasks-status-section h3 {
+    margin-bottom: 20px;
+    color: #3F3F41;
+    font-size: 20px;
+    border-bottom: 2px solid #FFD500;
+    padding-bottom: 10px;
+}
+
+/* Grid de Cards */
+.tasks-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 15px;
+    flex: 1;
+}
+
+/* Mensagem quando não há tarefas */
+.no-tasks-message {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 40px 20px;
+    color: #666;
+}
+
+.no-tasks-message p {
+    margin: 10px 0;
+    font-size: 16px;
+}
+
+.small-text {
+    font-size: 13px;
+    color: #999;
+}
+
+/* ===== CARD DE TAREFA INDIVIDUAL (MINIMALISTA) ===== */
+.task-card {
+    background: #f8f8f8;
+    border-radius: 10px;
+    padding: 15px;
+    border-left: 4px solid #FFD500;
+    transition: all 0.3s;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.task-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.task-card.paused {
+    border-left-color: #FFA500;
+    background: #fff9f0;
+}
+
+/* Cabeçalho do Card */
+.task-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.task-card-client {
+    font-weight: 700;
+    color: #3F3F41;
+    font-size: 14px;
+    line-height: 1.3;
+    flex: 1;
+}
+
+.task-card-status {
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+/* Info da Tarefa */
+.task-card-task {
+    font-size: 12px;
+    color: #666;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Timer */
+.task-card-timer {
+    font-size: 18px;
+    font-weight: 700;
+    color: #E59230;
+    font-family: 'Courier New', monospace;
+    text-align: center;
+    padding: 8px;
+    background: white;
+    border-radius: 6px;
+}
+
+.task-card.paused .task-card-timer {
+    color: #FFA500;
+}
+
+/* Horário de Início */
+.task-card-start {
+    font-size: 11px;
+    color: #999;
+    text-align: center;
+}
+
+/* Botões do Card */
+.task-card-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 5px;
+}
+
+.task-card-btn {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.task-card-btn:hover {
+    transform: translateY(-1px);
+}
+
+.task-card-btn.btn-pause {
+    background: #FFA500;
+    color: white;
+}
+
+.task-card-btn.btn-pause:hover {
+    background: #FF8C00;
+    box-shadow: 0 2px 8px rgba(255, 165, 0, 0.3);
+}
+
+.task-card-btn.btn-resume {
+    background: #4CAF50;
+    color: white;
+}
+
+.task-card-btn.btn-resume:hover {
+    background: #45a049;
+    box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+}
+
+.task-card-btn.btn-finish {
+    background: linear-gradient(135deg, #FFD500 0%, #E59230 100%);
+    color: #3F3F41;
+}
+
+.task-card-btn.btn-finish:hover {
+    box-shadow: 0 2px 8px rgba(255, 213, 0, 0.4);
 }
 
 /* ===== COLUNA DIREITA - CHAT (30%) ===== */
@@ -552,6 +604,10 @@ body {
     .chat-panel {
         min-height: 400px;
     }
+    
+    .tasks-grid {
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    }
 }
 
 @media (max-width: 768px) {
@@ -569,17 +625,21 @@ body {
         gap: 10px;
     }
     
-    .task-status-card,
-    .task-selection-card {
+    .task-selection-card,
+    .tasks-status-section {
         padding: 15px;
     }
     
-    .task-controls {
+    .tasks-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .task-card-actions {
         flex-direction: column;
     }
 }
 
-/* ===== PÃGINA DE LOGIN (mantÃ©m igual) ===== */
+/* ===== PÁGINA DE LOGIN (mantém igual) ===== */
 .login-container {
     display: flex;
     justify-content: center;

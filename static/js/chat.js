@@ -1,11 +1,8 @@
 // ========================================
-// VARIÃVEIS GLOBAIS
+// VARIÁVEIS GLOBAIS
 // ========================================
-let currentTask = null;
-let taskStartTime = null;
-let taskTimer = null;
-let pauseStartTime = null;
-let totalPausedTime = 0;
+let activeTasks = []; // Array para múltiplas tarefas
+let taskTimers = {}; // Objeto para guardar os timers de cada tarefa
 
 // ========================================
 // ELEMENTOS DO DOM
@@ -28,23 +25,12 @@ const clearClientBtn = document.getElementById('clearClient');
 const taskSelect = document.getElementById('taskSelect');
 const btnStartTask = document.getElementById('btnStartTask');
 
-// Elementos de status
-const noTaskActive = document.getElementById('noTaskActive');
-const taskActive = document.getElementById('taskActive');
-const activeClientName = document.getElementById('activeClientName');
-const activeTaskName = document.getElementById('activeTaskName');
-const activeTaskStart = document.getElementById('activeTaskStart');
-const activeTaskDuration = document.getElementById('activeTaskDuration');
-const pausedTimeRow = document.getElementById('pausedTimeRow');
-const pausedTime = document.getElementById('pausedTime');
-
-// BotÃµes de controle
-const btnPause = document.getElementById('btnPause');
-const btnResume = document.getElementById('btnResume');
-const btnFinish = document.getElementById('btnFinish');
+// Container de tarefas
+const tasksContainer = document.getElementById('tasksContainer');
+const noTasksMessage = document.getElementById('noTasksMessage');
 
 // ========================================
-// FUNÃ‡Ã•ES DE CHAT
+// FUNÇÕES DE CHAT
 // ========================================
 function processarFormatacao(texto) {
     let textoSeguro = texto
@@ -177,7 +163,6 @@ function selecionarCliente(cliente) {
     clientSearch.value = '';
     clientResults.classList.remove('show');
     
-    // Buscar tarefas deste cliente
     carregarTarefasCliente(cliente.num_cnpj_cpf);
 }
 
@@ -235,7 +220,6 @@ function preencherSelectTarefas(tarefas) {
     
     tarefas.forEach(tarefa => {
         const option = document.createElement('option');
-        // ✅ CORRIGIDO: Agora inclui o ID da tarefa
         option.value = JSON.stringify({
             id: tarefa.id,
             nome_tarefa: tarefa.nome_tarefa,
@@ -252,6 +236,85 @@ function preencherSelectTarefas(tarefas) {
 taskSelect.addEventListener('change', function() {
     btnStartTask.disabled = !this.value;
 });
+
+// ========================================
+// CRIAR CARD DE TAREFA
+// ========================================
+function criarCardTarefa(task) {
+    console.log('🏗️ Criando card para tarefa:', {
+        apontamento_id: task.id,
+        tarefa_nome: task.tarefa,
+        cliente: task.cliente
+    });
+    
+    const card = document.createElement('div');
+    card.className = 'task-card';
+    card.id = `task-${task.id}`;
+    
+    if (task.status === 'pausado') {
+        card.classList.add('paused');
+    }
+    
+    card.innerHTML = `
+        <div class="task-card-header">
+            <div class="task-card-client">${task.cliente}</div>
+            <div class="task-card-status">${task.status === 'pausado' ? '⏸️' : '▶️'}</div>
+        </div>
+        
+        <div class="task-card-task">${task.tarefa}</div>
+        
+        <div class="task-card-timer" id="timer-${task.id}">00:00:00</div>
+        
+        <div class="task-card-start">Início: ${formatarHora(task.startTime)}</div>
+        
+        <div class="task-card-actions">
+            ${task.status === 'pausado' ? 
+                `<button class="task-card-btn btn-resume" onclick="retomarTarefa(${task.id})">
+                    ▶️ Retomar
+                </button>` : 
+                `<button class="task-card-btn btn-pause" onclick="pausarTarefa(${task.id})">
+                    ⏸️ Pausar
+                </button>`
+            }
+            <button class="task-card-btn btn-finish" onclick="finalizarTarefa(${task.id})">
+                ✅ Finalizar
+            </button>
+        </div>
+    `;
+    
+    console.log(`✅ Card criado: task-${task.id} | Botões com ID: ${task.id}`);
+    
+    return card;
+}
+
+// ========================================
+// ATUALIZAR UI DE TAREFAS
+// ========================================
+function atualizarUITarefas() {
+    if (activeTasks.length === 0) {
+        noTasksMessage.style.display = 'block';
+    } else {
+        noTasksMessage.style.display = 'none';
+    }
+}
+
+function adicionarTaskCard(task) {
+    const card = criarCardTarefa(task);
+    tasksContainer.appendChild(card);
+    atualizarUITarefas();
+    
+    // Iniciar timer
+    iniciarTimerTarefa(task.id, task.startTime, task.totalPausedTime, task.pauseStartTime);
+}
+
+function removerTaskCard(taskId) {
+    const card = document.getElementById(`task-${taskId}`);
+    if (card) {
+        card.remove();
+    }
+    pararTimerTarefa(taskId);
+    atualizarUITarefas();
+}
 
 // ========================================
 // INICIAR TAREFA
@@ -275,31 +338,36 @@ taskForm.addEventListener('submit', async (e) => {
             body: JSON.stringify({
                 cnpj_cliente: selectedClientCNPJ.value,
                 nome_cliente: selectedClientName.value,
-                tarefa_id: tarefaData.id,  // ✅ CORRIGIDO: Enviar tarefa_id
-                nome_tarefa: tarefaData.nome_tarefa  // Para exibição
+                tarefa_id: tarefaData.id,
+                nome_tarefa: tarefaData.nome_tarefa
             })
         });
         
         const data = await response.json();
         
         if (data.success) {
-            currentTask = {
+            const newTask = {
                 id: data.apontamento_id,
                 cliente: selectedClientName.value,
                 tarefa: tarefaData.nome_tarefa,
-                cnpj: selectedClientCNPJ.value
+                cnpj: selectedClientCNPJ.value,
+                startTime: new Date(data.data_inicio),
+                totalPausedTime: 0,
+                pauseStartTime: null,
+                status: 'em_andamento'
             };
             
-            taskStartTime = new Date();
-            totalPausedTime = 0;
-            pauseStartTime = null;
+            console.log('➕ Adicionando tarefa ao activeTasks:', {
+                apontamento_id: newTask.id,
+                tarefa_id_original: tarefaData.id,
+                nome_tarefa: newTask.tarefa
+            });
             
-            atualizarUITarefaAtiva();
-            iniciarTimer();
+            activeTasks.push(newTask);
+            adicionarTaskCard(newTask);
             
             adicionarMensagem(`Tarefa iniciada: ${tarefaData.nome_tarefa} para ${selectedClientName.value}`, 'bot');
             
-            // Limpar formulário
             clearClientBtn.click();
         } else {
             adicionarMensagem('Erro ao iniciar tarefa: ' + data.message, 'bot');
@@ -314,32 +382,37 @@ taskForm.addEventListener('submit', async (e) => {
 });
 
 // ========================================
-// CONTROLE DE TIMER
+// CONTROLE DE TIMERS
 // ========================================
-function iniciarTimer() {
-    if (taskTimer) clearInterval(taskTimer);
+function iniciarTimerTarefa(taskId, startTime, totalPausedTime, pauseStartTime) {
+    if (taskTimers[taskId]) {
+        clearInterval(taskTimers[taskId]);
+    }
     
-    taskTimer = setInterval(() => {
-        if (!taskStartTime) return;
+    taskTimers[taskId] = setInterval(() => {
+        const timerElement = document.getElementById(`timer-${taskId}`);
+        if (!timerElement) {
+            clearInterval(taskTimers[taskId]);
+            return;
+        }
         
         const agora = new Date();
-        let tempoDecorrido = agora - taskStartTime;
+        let tempoDecorrido = agora - startTime;
         
-        // Descontar tempo pausado
         if (pauseStartTime) {
             tempoDecorrido -= (agora - pauseStartTime);
         } else {
             tempoDecorrido -= totalPausedTime;
         }
         
-        activeTaskDuration.textContent = formatarDuracao(tempoDecorrido);
+        timerElement.textContent = formatarDuracao(tempoDecorrido);
     }, 1000);
 }
 
-function pararTimer() {
-    if (taskTimer) {
-        clearInterval(taskTimer);
-        taskTimer = null;
+function pararTimerTarefa(taskId) {
+    if (taskTimers[taskId]) {
+        clearInterval(taskTimers[taskId]);
+        delete taskTimers[taskId];
     }
 }
 
@@ -353,149 +426,191 @@ function formatarDuracao(ms) {
 }
 
 // ========================================
-// ATUALIZAR UI
-// ========================================
-function atualizarUITarefaAtiva() {
-    noTaskActive.style.display = 'none';
-    taskActive.style.display = 'block';
-    
-    activeClientName.textContent = currentTask.cliente;
-    activeTaskName.textContent = currentTask.tarefa;
-    activeTaskStart.textContent = formatarHora(taskStartTime);
-}
-
-function atualizarUISemTarefa() {
-    noTaskActive.style.display = 'block';
-    taskActive.style.display = 'none';
-    
-    currentTask = null;
-    taskStartTime = null;
-    totalPausedTime = 0;
-    pauseStartTime = null;
-    
-    pararTimer();
-}
-
-// ========================================
 // PAUSAR TAREFA
 // ========================================
-btnPause.addEventListener('click', async () => {
-    if (!currentTask) return;
+window.pausarTarefa = async function(taskId) {
+    // ✅ Garantir que taskId é number
+    taskId = Number(taskId);
     
-    btnPause.disabled = true;
+    console.log('🔵 Pausando tarefa:', taskId);
     
     try {
         const response = await fetch('/api/pausar-tarefa', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-            }
+            },
+            body: JSON.stringify({ apontamento_id: taskId })
         });
         
         const data = await response.json();
         
         if (data.success) {
-            pauseStartTime = new Date();
-            
-            btnPause.style.display = 'none';
-            btnResume.style.display = 'block';
-            
-            pausedTimeRow.style.display = 'flex';
+            const task = activeTasks.find(t => t.id === taskId);
+            if (task) {
+                task.pauseStartTime = new Date();
+                task.status = 'pausado';
+                
+                // ✅ PARAR O TIMER!
+                pararTimerTarefa(taskId);
+                console.log('⏹️ Timer parado para tarefa:', taskId);
+                
+                // Atualizar card
+                const card = document.getElementById(`task-${taskId}`);
+                if (card) {
+                    card.classList.add('paused');
+                    card.querySelector('.task-card-status').textContent = '⏸️';
+                    
+                    const actions = card.querySelector('.task-card-actions');
+                    actions.innerHTML = `
+                        <button class="task-card-btn btn-resume" onclick="retomarTarefa(${taskId})">
+                            ▶️ Retomar
+                        </button>
+                        <button class="task-card-btn btn-finish" onclick="finalizarTarefa(${taskId})">
+                            ✅ Finalizar
+                        </button>
+                    `;
+                }
+            }
             
             adicionarMensagem('Tarefa pausada', 'bot');
-        } else {
-            adicionarMensagem('Erro ao pausar tarefa', 'bot');
         }
     } catch (error) {
         console.error('Erro ao pausar:', error);
         adicionarMensagem('Erro ao pausar tarefa', 'bot');
-    } finally {
-        btnPause.disabled = false;
     }
-});
+}
 
 // ========================================
 // RETOMAR TAREFA
 // ========================================
-btnResume.addEventListener('click', async () => {
-    if (!currentTask || !pauseStartTime) return;
+window.retomarTarefa = async function(taskId) {
+    // ✅ Garantir que taskId é number
+    taskId = Number(taskId);
     
-    btnResume.disabled = true;
+    console.log('🟢 Retomando tarefa:', taskId);
     
     try {
         const response = await fetch('/api/retomar-tarefa', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-            }
+            },
+            body: JSON.stringify({ apontamento_id: taskId })
         });
         
         const data = await response.json();
         
         if (data.success) {
-            // Acumular tempo pausado
-            totalPausedTime += (new Date() - pauseStartTime);
-            pauseStartTime = null;
-            
-            btnResume.style.display = 'none';
-            btnPause.style.display = 'block';
-            
-            pausedTime.textContent = formatarDuracao(totalPausedTime);
+            const task = activeTasks.find(t => t.id === taskId);
+            if (task) {
+                task.totalPausedTime += (new Date() - task.pauseStartTime);
+                task.pauseStartTime = null;
+                task.status = 'em_andamento';
+                
+                // ✅ REINICIAR O TIMER!
+                iniciarTimerTarefa(task.id, task.startTime, task.totalPausedTime, null);
+                console.log('▶️ Timer reiniciado para tarefa:', taskId);
+                
+                // Atualizar card
+                const card = document.getElementById(`task-${taskId}`);
+                if (card) {
+                    card.classList.remove('paused');
+                    card.querySelector('.task-card-status').textContent = '▶️';
+                    
+                    const actions = card.querySelector('.task-card-actions');
+                    actions.innerHTML = `
+                        <button class="task-card-btn btn-pause" onclick="pausarTarefa(${taskId})">
+                            ⏸️ Pausar
+                        </button>
+                        <button class="task-card-btn btn-finish" onclick="finalizarTarefa(${taskId})">
+                            ✅ Finalizar
+                        </button>
+                    `;
+                }
+            }
             
             adicionarMensagem('Tarefa retomada', 'bot');
-        } else {
-            adicionarMensagem('Erro ao retomar tarefa', 'bot');
         }
     } catch (error) {
         console.error('Erro ao retomar:', error);
         adicionarMensagem('Erro ao retomar tarefa', 'bot');
-    } finally {
-        btnResume.disabled = false;
     }
-});
+}
 
 // ========================================
 // FINALIZAR TAREFA
 // ========================================
-btnFinish.addEventListener('click', async () => {
-    if (!currentTask) return;
+window.finalizarTarefa = async function(taskId) {
+    // ✅ Garantir que taskId é number
+    taskId = Number(taskId);
     
-    const confirmar = confirm(`Finalizar tarefa "${currentTask.tarefa}"?`);
+    console.log('🔴 Finalizando tarefa:', taskId);
+    console.log('📋 Tipo do taskId:', typeof taskId);
+    console.log('🔍 activeTasks:', activeTasks);
+    
+    const task = activeTasks.find(t => t.id === taskId);
+    if (!task) {
+        console.error('❌ Tarefa não encontrada:', taskId);
+        console.error('   activeTasks IDs:', activeTasks.map(t => t.id));
+        return;
+    }
+    
+    console.log('✅ Tarefa encontrada:', task);
+    
+    const confirmar = confirm(`Finalizar tarefa "${task.tarefa}"?`);
     if (!confirmar) return;
     
-    btnFinish.disabled = true;
-    btnFinish.textContent = 'Finalizando...';
+    console.log('📤 Enviando para backend - apontamento_id:', taskId);
     
     try {
         const response = await fetch('/api/finalizar-tarefa', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-            }
+            },
+            body: JSON.stringify({ apontamento_id: taskId })
         });
         
         const data = await response.json();
+        console.log('📥 Resposta do backend:');
+        console.log('   Status HTTP:', response.status);
+        console.log('   Success:', data.success);
+        console.log('   Data completo:', JSON.stringify(data, null, 2));
         
         if (data.success) {
-            const horasTrabalhadas = data.horas_trabalhadas || 0;
+            // ✅ Garantir que horas_trabalhadas é number
+            const horasTrabalhadas = Number(data.horas_trabalhadas) || 0;
+            
+            console.log('⏱️ Horas trabalhadas:', horasTrabalhadas, 'Tipo:', typeof horasTrabalhadas);
             
             adicionarMensagem(
-                `âœ… Tarefa finalizada!\n\nCliente: ${currentTask.cliente}\nTarefa: ${currentTask.tarefa}\n\nHoras trabalhadas: ${horasTrabalhadas.toFixed(2)}h`, 
+                `✔️ Tarefa finalizada!\n\nCliente: ${task.cliente}\nTarefa: ${task.tarefa}\n\nHoras trabalhadas: ${horasTrabalhadas.toFixed(2)}h`, 
                 'bot'
             );
             
-            atualizarUISemTarefa();
+            // Remover do array e da UI
+            activeTasks = activeTasks.filter(t => t.id !== taskId);
+            removerTaskCard(taskId);
+            console.log('✅ Tarefa removida:', taskId);
         } else {
-            adicionarMensagem('Erro ao finalizar tarefa: ' + data.message, 'bot');
+            console.error('❌ Erro do backend:', data.message);
+            adicionarMensagem('Erro ao finalizar tarefa: ' + (data.message || 'Erro desconhecido'), 'bot');
+            
+            // ⚠️ FALLBACK: Remover card mesmo com erro do backend
+            // (a tarefa pode ter sido finalizada no banco, mas o frontend não sabe)
+            const confirmarRemocao = confirm('Houve um erro, mas deseja remover o card da tela mesmo assim?');
+            if (confirmarRemocao) {
+                activeTasks = activeTasks.filter(t => t.id !== taskId);
+                removerTaskCard(taskId);
+                console.log('⚠️ Card removido manualmente pelo usuário');
+            }
         }
     } catch (error) {
-        console.error('Erro ao finalizar:', error);
-        adicionarMensagem('Erro ao finalizar tarefa', 'bot');
-    } finally {
-        btnFinish.disabled = false;
-        btnFinish.textContent = 'âœ… Finalizar';
+        console.error('❌ Erro ao finalizar:', error);
+        adicionarMensagem('Erro ao finalizar tarefa: ' + error.message, 'bot');
     }
-});
+}
 
 // ========================================
 // CHAT COM ASSISTENTE
@@ -531,7 +646,7 @@ chatForm.addEventListener('submit', async (e) => {
         }
     } catch (error) {
         mostrarDigitando(false);
-        adicionarMensagem('Erro de conexÃ£o. Verifique sua internet.', 'bot');
+        adicionarMensagem('Erro de conexão. Verifique sua internet.', 'bot');
     } finally {
         mensagemInput.disabled = false;
         mensagemInput.focus();
@@ -542,8 +657,8 @@ chatForm.addEventListener('submit', async (e) => {
 // LOGOUT
 // ========================================
 btnLogout.addEventListener('click', async () => {
-    if (currentTask) {
-        const confirmar = confirm('VocÃª tem uma tarefa ativa. Deseja realmente sair?');
+    if (activeTasks.length > 0) {
+        const confirmar = confirm('Você tem tarefas ativas. Deseja realmente sair?');
         if (!confirmar) return;
     }
     
@@ -561,36 +676,32 @@ btnLogout.addEventListener('click', async () => {
 });
 
 // ========================================
-// VERIFICAR TAREFA ATIVA AO CARREGAR
+// VERIFICAR TAREFAS ATIVAS AO CARREGAR
 // ========================================
-async function verificarTarefaAtiva() {
+async function verificarTarefasAtivas() {
     try {
-        const response = await fetch('/api/verificar-tarefa-ativa');
+        const response = await fetch('/api/verificar-tarefas-ativas');
         const data = await response.json();
         
-        if (data.success && data.tem_tarefa_ativa) {
-            currentTask = {
-                id: data.apontamento_id,
-                cliente: data.cliente_nome,
-                tarefa: data.tarefa_nome,
-                cnpj: data.cnpj
-            };
-            
-            taskStartTime = new Date(data.data_inicio);
-            totalPausedTime = data.tempo_pausado_ms || 0;
-            
-            if (data.status === 'pausado') {
-                pauseStartTime = new Date(data.data_pausa);
-                btnPause.style.display = 'none';
-                btnResume.style.display = 'block';
-                pausedTimeRow.style.display = 'flex';
-            }
-            
-            atualizarUITarefaAtiva();
-            iniciarTimer();
+        if (data.success && data.tarefas && data.tarefas.length > 0) {
+            data.tarefas.forEach(tarefaData => {
+                const task = {
+                    id: tarefaData.apontamento_id,
+                    cliente: tarefaData.cliente_nome,
+                    tarefa: tarefaData.tarefa_nome,
+                    cnpj: tarefaData.cnpj,
+                    startTime: new Date(tarefaData.data_inicio),
+                    totalPausedTime: tarefaData.tempo_pausado_ms || 0,
+                    pauseStartTime: tarefaData.data_pausa ? new Date(tarefaData.data_pausa) : null,
+                    status: tarefaData.status
+                };
+                
+                activeTasks.push(task);
+                adicionarTaskCard(task);
+            });
         }
     } catch (error) {
-        console.error('Erro ao verificar tarefa ativa:', error);
+        console.error('Erro ao verificar tarefas ativas:', error);
     }
 }
 
@@ -602,5 +713,5 @@ document.addEventListener('click', (e) => {
 });
 
 // Inicializar
-verificarTarefaAtiva();
+verificarTarefasAtivas();
 mensagemInput.focus();

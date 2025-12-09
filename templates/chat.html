@@ -20,46 +20,9 @@
     <div class="main-container">
         <!-- Coluna esquerda - Controle de Tarefas (70%) -->
         <div class="control-panel">
-            <!-- Status da tarefa ativa -->
-            <div class="task-status-card" id="taskStatusCard">
-                <h3>📊 Status Atual</h3>
-                <div id="noTaskActive" class="no-task-message">
-                    <p>🔴 Nenhuma tarefa ativa</p>
-                    <p class="small-text">Selecione um cliente e tarefa abaixo para iniciar</p>
-                </div>
-                <div id="taskActive" class="active-task" style="display: none;">
-                    <div class="task-info">
-                        <div class="info-row">
-                            <span class="label">🏢 Cliente:</span>
-                            <span id="activeClientName" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <span class="label">📋 Tarefa:</span>
-                            <span id="activeTaskName" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <span class="label">🕒 Início:</span>
-                            <span id="activeTaskStart" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <span class="label">⏱️ Duração:</span>
-                            <span id="activeTaskDuration" class="value timer">00:00:00</span>
-                        </div>
-                        <div class="info-row" id="pausedTimeRow" style="display: none;">
-                            <span class="label">⏸️ Pausado:</span>
-                            <span id="pausedTime" class="value">-</span>
-                        </div>
-                    </div>
-                    <div class="task-controls">
-                        <button id="btnPause" class="btn-control btn-pause">⏸️ Pausar</button>
-                        <button id="btnResume" class="btn-control btn-resume" style="display: none;">▶️ Retomar</button>
-                        <button id="btnFinish" class="btn-control btn-finish">✅ Finalizar</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Seleção de nova tarefa -->
-            <div class="task-selection-card" id="taskSelectionCard">
+            
+            <!-- 1. INICIAR NOVA TAREFA (AGORA NO TOPO) -->
+            <div class="task-selection-card">
                 <h3>🚀 Iniciar Nova Tarefa</h3>
                 <form id="taskForm">
                     <div class="form-group">
@@ -90,6 +53,20 @@
                         🚀 Iniciar Tarefa
                     </button>
                 </form>
+            </div>
+
+            <!-- 2. TAREFAS ATIVAS (AGORA EMBAIXO - CARDS PEQUENOS) -->
+            <div class="tasks-status-section">
+                <h3>📊 Tarefas Ativas</h3>
+                <div id="tasksContainer" class="tasks-grid">
+                    <!-- Mensagem quando não há tarefas -->
+                    <div id="noTasksMessage" class="no-tasks-message">
+                        <p>🔴 Nenhuma tarefa ativa</p>
+                        <p class="small-text">Inicie uma tarefa acima</p>
+                    </div>
+                    
+                    <!-- Cards de tarefas serão inseridos aqui dinamicamente -->
+                </div>
             </div>
         </div>
 
