@@ -3,60 +3,131 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat - Chatbot</title>
+    <title>Apontamento de Horas - Booker</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <div class="chat-container">
-        <div class="chat-header">
-            <div class="header-content">
-                <h1>⏱️ Booker Apontamento de Horas</h1>
-                <div class="user-info">
-                    <span id="nomeUsuario">{{ usuario }}</span>
-                    <button id="btnLogout" class="btn-logout">Sair</button>
+    <!-- Header fixo no topo -->
+    <div class="top-header">
+        <h1>⏱️ Booker Apontamento de Horas</h1>
+        <div class="user-info">
+            <span id="nomeUsuario">{{ usuario }}</span>
+            <button id="btnLogout" class="btn-logout">Sair</button>
+        </div>
+    </div>
+
+    <!-- Container principal com 2 colunas -->
+    <div class="main-container">
+        <!-- Coluna esquerda - Controle de Tarefas (70%) -->
+        <div class="control-panel">
+            <!-- Status da tarefa ativa -->
+            <div class="task-status-card" id="taskStatusCard">
+                <h3>📊 Status Atual</h3>
+                <div id="noTaskActive" class="no-task-message">
+                    <p>🔴 Nenhuma tarefa ativa</p>
+                    <p class="small-text">Selecione um cliente e tarefa abaixo para iniciar</p>
+                </div>
+                <div id="taskActive" class="active-task" style="display: none;">
+                    <div class="task-info">
+                        <div class="info-row">
+                            <span class="label">🏢 Cliente:</span>
+                            <span id="activeClientName" class="value">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📋 Tarefa:</span>
+                            <span id="activeTaskName" class="value">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🕒 Início:</span>
+                            <span id="activeTaskStart" class="value">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">⏱️ Duração:</span>
+                            <span id="activeTaskDuration" class="value timer">00:00:00</span>
+                        </div>
+                        <div class="info-row" id="pausedTimeRow" style="display: none;">
+                            <span class="label">⏸️ Pausado:</span>
+                            <span id="pausedTime" class="value">-</span>
+                        </div>
+                    </div>
+                    <div class="task-controls">
+                        <button id="btnPause" class="btn-control btn-pause">⏸️ Pausar</button>
+                        <button id="btnResume" class="btn-control btn-resume" style="display: none;">▶️ Retomar</button>
+                        <button id="btnFinish" class="btn-control btn-finish">✅ Finalizar</button>
+                    </div>
                 </div>
             </div>
-        </div>
-        
-        <div class="chat-messages" id="chatMessages">
-            <div class="message bot-message">
-                <div class="message-content">
-                    <strong>Assistente:</strong>
-                    <p>👋 Bem-vindo ao Assistente de Apontamento de Horas!</p>
-                    <p>Estou aqui para ajudar você a registrar suas atividades profissionais.</p>
-                    <br>
-                    <p><strong>📝 Como usar:</strong></p>
-                    <p>🚀 <strong>Iniciar uma tarefa:</strong> "Iniciar [nome da tarefa]"<br>
-                    <em>Exemplo:</em> "Iniciar reunião com cliente ABC"</p>
-                    <p>⏹️ <strong>Finalizar tarefa:</strong> "Finalizar", "Parar" ou "Terminar"</p>
-                    <p>📊 <strong>Consultar horas:</strong> "Quanto eu trabalhei hoje?"</p>
-                    <p>📋 <strong>Ver histórico:</strong> "Mostrar meu histórico"</p>
-                    <br>
-                    <p>💡 O que você gostaria de fazer agora?</p>
-                </div>
-                <div class="message-time"></div>
+
+            <!-- Seleção de nova tarefa -->
+            <div class="task-selection-card" id="taskSelectionCard">
+                <h3>🚀 Iniciar Nova Tarefa</h3>
+                <form id="taskForm">
+                    <div class="form-group">
+                        <label for="clientSearch">🔍 Buscar Cliente:</label>
+                        <input 
+                            type="text" 
+                            id="clientSearch" 
+                            placeholder="Digite o nome do cliente..."
+                            autocomplete="off"
+                        >
+                        <div id="clientResults" class="search-results"></div>
+                        <input type="hidden" id="selectedClientCNPJ">
+                        <input type="hidden" id="selectedClientName">
+                        <div id="selectedClientDisplay" class="selected-item" style="display: none;">
+                            <span id="selectedClientText"></span>
+                            <button type="button" id="clearClient" class="btn-clear">✕</button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="taskSelect">📋 Selecionar Tarefa:</label>
+                        <select id="taskSelect" disabled>
+                            <option value="">Selecione um cliente primeiro</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="btn-start" id="btnStartTask" disabled>
+                        🚀 Iniciar Tarefa
+                    </button>
+                </form>
             </div>
         </div>
-        
-        <div class="chat-input-container">
-            <form id="chatForm">
-                <div class="input-wrapper">
-                    <input 
-                        type="text" 
-                        id="mensagemInput" 
-                        placeholder="Digite sua mensagem..." 
-                        autocomplete="off"
-                        required
-                    >
-                    <button type="submit" class="btn-send">Enviar</button>
+
+        <!-- Coluna direita - Chat (30%) -->
+        <div class="chat-panel">
+            <div class="chat-header-small">
+                <h2>💬 Assistente</h2>
+            </div>
+            
+            <div class="chat-messages" id="chatMessages">
+                <div class="message bot-message">
+                    <div class="message-content">
+                        <p>👋 Olá! Estou aqui para ajudar.</p>
+                        <p class="small-text">Use o painel à esquerda para iniciar tarefas ou pergunte algo aqui.</p>
+                    </div>
+                    <div class="message-time"></div>
                 </div>
-            </form>
-        </div>
-        
-        <div id="typing-indicator" class="typing-indicator" style="display: none;">
-            <span></span>
-            <span></span>
-            <span></span>
+            </div>
+            
+            <div class="chat-input-container">
+                <form id="chatForm">
+                    <div class="input-wrapper">
+                        <input 
+                            type="text" 
+                            id="mensagemInput" 
+                            placeholder="Pergunte algo..." 
+                            autocomplete="off"
+                        >
+                        <button type="submit" class="btn-send">➤</button>
+                    </div>
+                </form>
+            </div>
+            
+            <div id="typing-indicator" class="typing-indicator" style="display: none;">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
         </div>
     </div>
     
