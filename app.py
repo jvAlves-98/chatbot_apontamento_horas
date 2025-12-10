@@ -536,6 +536,102 @@ def finalizar_tarefa():
     finally:
         conn.close()
 
+@app.route('/api/registrar-atrasado', methods=['POST'])
+def registrar_atrasado():
+    """Registra um apontamento atrasado com período específico"""
+    if 'usuario' not in session:
+        return jsonify({'success': False, 'message': 'Não autenticado'}), 401
+    
+    dados = request.get_json()
+    cnpj_cliente = dados.get('cnpj_cliente')
+    nome_cliente = dados.get('nome_cliente')
+    tarefa_id = dados.get('tarefa_id')
+    nome_tarefa = dados.get('nome_tarefa')
+    data_inicio_str = dados.get('data_inicio')
+    data_fim_str = dados.get('data_fim')
+    usuario = session.get('usuario')
+    
+    if not all([cnpj_cliente, tarefa_id, data_inicio_str, data_fim_str]):
+        return jsonify({'success': False, 'message': 'Dados incompletos'}), 400
+    
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'success': False, 'message': 'Erro de conexão'}), 500
+    
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Converter strings de data para datetime
+        from datetime import datetime
+        data_inicio = datetime.fromisoformat(data_inicio_str.replace('Z', '+00:00'))
+        data_fim = datetime.fromisoformat(data_fim_str.replace('Z', '+00:00'))
+        
+        # Validar datas
+        if data_fim <= data_inicio:
+            return jsonify({'success': False, 'message': 'Data de fim deve ser posterior à data de início'}), 400
+        
+        if data_inicio > datetime.now() or data_fim > datetime.now():
+            return jsonify({'success': False, 'message': 'Não é possível registrar apontamento no futuro'}), 400
+        
+        # Inserir apontamento já finalizado
+        cursor.execute("""
+            WITH ids_resolvidos AS (
+                SELECT 
+                    f.id AS funcionario_id,
+                    c.id AS cliente_id
+                FROM funcionarios f
+                CROSS JOIN clientes c
+                WHERE f.usuario = %s
+                  AND c.num_cnpj_cpf = %s
+                LIMIT 1
+            )
+            INSERT INTO apontamentos_horas (
+                funcionario_id,
+                cliente_id,
+                tarefa_id,
+                data_inicio,
+                data_fim,
+                status,
+                criado_em,
+                atualizado_em
+            )
+            SELECT 
+                funcionario_id,
+                cliente_id,
+                %s,
+                %s AT TIME ZONE 'America/Sao_Paulo',
+                %s AT TIME ZONE 'America/Sao_Paulo',
+                'finalizado',
+                NOW(),
+                NOW()
+            FROM ids_resolvidos
+            RETURNING 
+                id,
+                EXTRACT(EPOCH FROM (data_fim - data_inicio))/3600 AS horas_trabalhadas
+        """, (usuario, cnpj_cliente, tarefa_id, data_inicio_str, data_fim_str))
+        
+        resultado = cursor.fetchone()
+        conn.commit()
+        
+        horas = round(resultado['horas_trabalhadas'], 2)
+        
+        print(f"✅ Apontamento atrasado registrado: {usuario} | Tarefa ID: {tarefa_id} | {nome_tarefa} | {horas}h | {data_inicio_str} até {data_fim_str}")
+        
+        return jsonify({
+            'success': True,
+            'apontamento_id': resultado['id'],
+            'horas_trabalhadas': horas
+        })
+        
+    except Exception as e:
+        conn.rollback()
+        print(f"❌ Erro ao registrar atrasado: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        conn.close()
+
 @app.route('/api/verificar-tarefas-ativas', methods=['GET'])
 def verificar_tarefas_ativas():
     """Verifica TODAS as tarefas ativas do usuário"""

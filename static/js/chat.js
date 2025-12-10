@@ -710,8 +710,281 @@ document.addEventListener('click', (e) => {
     if (!clientSearch.contains(e.target) && !clientResults.contains(e.target)) {
         clientResults.classList.remove('show');
     }
+    
+    // Fechar resultados do late client search também
+    if (!lateClientSearch.contains(e.target) && !lateClientResults.contains(e.target)) {
+        lateClientResults.classList.remove('show');
+    }
 });
+
+// ========================================
+// APONTAMENTOS ATRASADOS
+// ========================================
+
+// Elementos do formulário de apontamentos atrasados
+const lateTaskForm = document.getElementById('lateTaskForm');
+const lateClientSearch = document.getElementById('lateClientSearch');
+const lateClientResults = document.getElementById('lateClientResults');
+const lateSelectedClientCNPJ = document.getElementById('lateSelectedClientCNPJ');
+const lateSelectedClientName = document.getElementById('lateSelectedClientName');
+const lateSelectedClientDisplay = document.getElementById('lateSelectedClientDisplay');
+const lateSelectedClientText = document.getElementById('lateSelectedClientText');
+const lateClearClientBtn = document.getElementById('lateClearClient');
+const lateTaskSelect = document.getElementById('lateTaskSelect');
+const lateStartDateTime = document.getElementById('lateStartDateTime');
+const lateEndDateTime = document.getElementById('lateEndDateTime');
+const btnRegisterLate = document.getElementById('btnRegisterLate');
+
+let lateSearchTimeout = null;
+
+// Busca de clientes para apontamento atrasado
+lateClientSearch.addEventListener('input', function() {
+    const query = this.value.trim();
+    
+    clearTimeout(lateSearchTimeout);
+    
+    if (query.length < 2) {
+        lateClientResults.classList.remove('show');
+        return;
+    }
+    
+    lateSearchTimeout = setTimeout(() => {
+        buscarClientesLate(query);
+    }, 300);
+});
+
+async function buscarClientesLate(query) {
+    try {
+        const response = await fetch('/api/buscar-clientes', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ query })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            mostrarResultadosClientesLate(data.clientes);
+        }
+    } catch (error) {
+        console.error('Erro ao buscar clientes (atrasado):', error);
+    }
+}
+
+function mostrarResultadosClientesLate(clientes) {
+    lateClientResults.innerHTML = '';
+    
+    if (clientes.length === 0) {
+        lateClientResults.innerHTML = '<div class="no-results">Nenhum cliente encontrado</div>';
+        lateClientResults.classList.add('show');
+        return;
+    }
+    
+    clientes.forEach(cliente => {
+        const item = document.createElement('div');
+        item.className = 'search-result-item';
+        item.innerHTML = `
+            <span class="client-name">${cliente.nom_cliente}</span>
+            <span class="client-cnpj">CNPJ: ${formatarCNPJ(cliente.num_cnpj_cpf)}</span>
+        `;
+        
+        item.addEventListener('click', () => {
+            selecionarClienteLate(cliente);
+        });
+        
+        lateClientResults.appendChild(item);
+    });
+    
+    lateClientResults.classList.add('show');
+}
+
+function selecionarClienteLate(cliente) {
+    lateSelectedClientCNPJ.value = cliente.num_cnpj_cpf;
+    lateSelectedClientName.value = cliente.nom_cliente;
+    
+    lateSelectedClientText.textContent = cliente.nom_cliente;
+    lateSelectedClientDisplay.style.display = 'flex';
+    
+    lateClientSearch.value = '';
+    lateClientResults.classList.remove('show');
+    
+    // Buscar tarefas deste cliente
+    carregarTarefasClienteLate(cliente.num_cnpj_cpf);
+}
+
+lateClearClientBtn.addEventListener('click', () => {
+    lateSelectedClientCNPJ.value = '';
+    lateSelectedClientName.value = '';
+    lateSelectedClientDisplay.style.display = 'none';
+    
+    lateTaskSelect.innerHTML = '<option value="">Selecione um cliente primeiro</option>';
+    lateTaskSelect.disabled = true;
+    btnRegisterLate.disabled = true;
+});
+
+async function carregarTarefasClienteLate(cnpj) {
+    try {
+        const response = await fetch('/api/buscar-tarefas', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ cnpj })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            preencherSelectTarefasLate(data.tarefas);
+        }
+    } catch (error) {
+        console.error('Erro ao buscar tarefas (atrasado):', error);
+    }
+}
+
+function preencherSelectTarefasLate(tarefas) {
+    lateTaskSelect.innerHTML = '<option value="">Selecione uma tarefa</option>';
+    
+    if (tarefas.length === 0) {
+        lateTaskSelect.innerHTML = '<option value="">Nenhuma tarefa disponível</option>';
+        lateTaskSelect.disabled = true;
+        btnRegisterLate.disabled = true;
+        return;
+    }
+    
+    tarefas.forEach(tarefa => {
+        const option = document.createElement('option');
+        option.value = JSON.stringify({
+            id: tarefa.id,
+            nome_tarefa: tarefa.nome_tarefa,
+            cod_grupo_tarefa: tarefa.cod_grupo_tarefa,
+            prioridade: tarefa.prioridade
+        });
+        option.textContent = `${tarefa.nome_tarefa} (${tarefa.prioridade || 'Sem prioridade'})`;
+        lateTaskSelect.appendChild(option);
+    });
+    
+    lateTaskSelect.disabled = false;
+    verificarFormLateCompleto();
+}
+
+lateTaskSelect.addEventListener('change', verificarFormLateCompleto);
+lateStartDateTime.addEventListener('change', verificarFormLateCompleto);
+lateEndDateTime.addEventListener('change', verificarFormLateCompleto);
+
+function verificarFormLateCompleto() {
+    const temCliente = lateSelectedClientCNPJ.value;
+    const temTarefa = lateTaskSelect.value;
+    const temInicio = lateStartDateTime.value;
+    const temFim = lateEndDateTime.value;
+    
+    btnRegisterLate.disabled = !(temCliente && temTarefa && temInicio && temFim);
+}
+
+// Submeter apontamento atrasado
+lateTaskForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    if (!lateSelectedClientCNPJ.value || !lateTaskSelect.value || !lateStartDateTime.value || !lateEndDateTime.value) {
+        return;
+    }
+    
+    const tarefaData = JSON.parse(lateTaskSelect.value);
+    const dataInicio = new Date(lateStartDateTime.value);
+    const dataFim = new Date(lateEndDateTime.value);
+    
+    // Validar datas
+    if (dataFim <= dataInicio) {
+        alert('A data/hora de fim deve ser posterior à data/hora de início!');
+        return;
+    }
+    
+    // Validar se não é no futuro
+    const agora = new Date();
+    if (dataInicio > agora || dataFim > agora) {
+        alert('Não é possível registrar apontamento no futuro!');
+        return;
+    }
+    
+    btnRegisterLate.disabled = true;
+    btnRegisterLate.textContent = 'Registrando...';
+    
+    try {
+        const response = await fetch('/api/registrar-atrasado', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                cnpj_cliente: lateSelectedClientCNPJ.value,
+                nome_cliente: lateSelectedClientName.value,
+                tarefa_id: tarefaData.id,
+                nome_tarefa: tarefaData.nome_tarefa,
+                data_inicio: lateStartDateTime.value,
+                data_fim: lateEndDateTime.value
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            const horas = Number(data.horas_trabalhadas) || 0;
+            
+            adicionarMensagem(
+                `✅ Apontamento atrasado registrado!\n\nCliente: ${lateSelectedClientName.value}\nTarefa: ${tarefaData.nome_tarefa}\n\nPeríodo: ${formatarDataHora(dataInicio)} até ${formatarDataHora(dataFim)}\nHoras trabalhadas: ${horas.toFixed(2)}h`,
+                'bot'
+            );
+            
+            // Limpar formulário
+            lateClearClientBtn.click();
+            lateStartDateTime.value = '';
+            lateEndDateTime.value = '';
+            verificarFormLateCompleto();
+        } else {
+            adicionarMensagem('Erro ao registrar apontamento: ' + data.message, 'bot');
+        }
+    } catch (error) {
+        console.error('Erro ao registrar apontamento atrasado:', error);
+        adicionarMensagem('Erro ao registrar apontamento. Tente novamente.', 'bot');
+    } finally {
+        btnRegisterLate.disabled = false;
+        btnRegisterLate.textContent = '⏰ Registrar Apontamento';
+    }
+});
+
+function formatarDataHora(data) {
+    return data.toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
 
 // Inicializar
 verificarTarefasAtivas();
 mensagemInput.focus();
+
+// ========================================
+// SISTEMA DE ABAS
+// ========================================
+const tabButtons = document.querySelectorAll('.tab-btn');
+const tabContents = document.querySelectorAll('.tab-content');
+
+tabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+        // Remover active de todos
+        tabButtons.forEach(btn => btn.classList.remove('active'));
+        tabContents.forEach(content => content.classList.remove('active'));
+        
+        // Adicionar active no clicado
+        button.classList.add('active');
+        const tabId = button.getAttribute('data-tab');
+        document.getElementById(tabId).classList.add('active');
+        
+        console.log('📑 Aba selecionada:', tabId);
+    });
+});

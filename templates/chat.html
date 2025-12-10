@@ -21,41 +21,106 @@
         <!-- Coluna esquerda - Controle de Tarefas (70%) -->
         <div class="control-panel">
             
-            <!-- 1. INICIAR NOVA TAREFA (AGORA NO TOPO) -->
+            <!-- SISTEMA DE ABAS PARA INICIAR/REGISTRAR -->
             <div class="task-selection-card">
-                <h3>🚀 Iniciar Nova Tarefa</h3>
-                <form id="taskForm">
-                    <div class="form-group">
-                        <label for="clientSearch">🔍 Buscar Cliente:</label>
-                        <input 
-                            type="text" 
-                            id="clientSearch" 
-                            placeholder="Digite o nome do cliente..."
-                            autocomplete="off"
-                        >
-                        <div id="clientResults" class="search-results"></div>
-                        <input type="hidden" id="selectedClientCNPJ">
-                        <input type="hidden" id="selectedClientName">
-                        <div id="selectedClientDisplay" class="selected-item" style="display: none;">
-                            <span id="selectedClientText"></span>
-                            <button type="button" id="clearClient" class="btn-clear">✕</button>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="taskSelect">📋 Selecionar Tarefa:</label>
-                        <select id="taskSelect" disabled>
-                            <option value="">Selecione um cliente primeiro</option>
-                        </select>
-                    </div>
-
-                    <button type="submit" class="btn-start" id="btnStartTask" disabled>
-                        🚀 Iniciar Tarefa
+                <!-- Abas de navegação -->
+                <div class="tabs-header">
+                    <button class="tab-btn active" data-tab="nova-tarefa">
+                        🚀 Iniciar Nova Tarefa
                     </button>
-                </form>
+                    <button class="tab-btn" data-tab="atrasado">
+                        ⏰ Apontamento Atrasado
+                    </button>
+                </div>
+
+                <!-- Conteúdo da Aba 1: Iniciar Nova Tarefa -->
+                <div id="nova-tarefa" class="tab-content active">
+                    <form id="taskForm">
+                        <div class="form-group">
+                            <label for="clientSearch">🔍 Buscar Cliente:</label>
+                            <input 
+                                type="text" 
+                                id="clientSearch" 
+                                placeholder="Digite o nome do cliente..."
+                                autocomplete="off"
+                            >
+                            <div id="clientResults" class="search-results"></div>
+                            <input type="hidden" id="selectedClientCNPJ">
+                            <input type="hidden" id="selectedClientName">
+                            <div id="selectedClientDisplay" class="selected-item" style="display: none;">
+                                <span id="selectedClientText"></span>
+                                <button type="button" id="clearClient" class="btn-clear">✕</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="taskSelect">📋 Selecionar Tarefa:</label>
+                            <select id="taskSelect" disabled>
+                                <option value="">Selecione um cliente primeiro</option>
+                            </select>
+                        </div>
+
+                        <button type="submit" class="btn-start" id="btnStartTask" disabled>
+                            🚀 Iniciar Tarefa
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Conteúdo da Aba 2: Apontamento Atrasado -->
+                <div id="atrasado" class="tab-content">
+                    <form id="lateTaskForm">
+                        <div class="form-group">
+                            <label for="lateClientSearch">🔍 Buscar Cliente:</label>
+                            <input 
+                                type="text" 
+                                id="lateClientSearch" 
+                                placeholder="Digite o nome do cliente..."
+                                autocomplete="off"
+                            >
+                            <div id="lateClientResults" class="search-results"></div>
+                            <input type="hidden" id="lateSelectedClientCNPJ">
+                            <input type="hidden" id="lateSelectedClientName">
+                            <div id="lateSelectedClientDisplay" class="selected-item" style="display: none;">
+                                <span id="lateSelectedClientText"></span>
+                                <button type="button" id="lateClearClient" class="btn-clear">✕</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="lateTaskSelect">📋 Selecionar Tarefa:</label>
+                            <select id="lateTaskSelect" disabled>
+                                <option value="">Selecione um cliente primeiro</option>
+                            </select>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="lateStartDateTime">📅 Data/Hora Início:</label>
+                                <input 
+                                    type="datetime-local" 
+                                    id="lateStartDateTime" 
+                                    required
+                                >
+                            </div>
+
+                            <div class="form-group">
+                                <label for="lateEndDateTime">📅 Data/Hora Fim:</label>
+                                <input 
+                                    type="datetime-local" 
+                                    id="lateEndDateTime" 
+                                    required
+                                >
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn-start btn-late" id="btnRegisterLate" disabled>
+                            ⏰ Registrar Apontamento
+                        </button>
+                    </form>
+                </div>
             </div>
 
-            <!-- 2. TAREFAS ATIVAS (AGORA EMBAIXO - CARDS PEQUENOS) -->
+            <!-- TAREFAS ATIVAS (CARDS MINIMALISTAS) -->
             <div class="tasks-status-section">
                 <h3>📊 Tarefas Ativas</h3>
                 <div id="tasksContainer" class="tasks-grid">

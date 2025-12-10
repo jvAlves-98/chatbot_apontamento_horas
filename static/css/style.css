@@ -77,8 +77,72 @@ body {
 .task-selection-card {
     background: white;
     border-radius: 12px;
-    padding: 25px;
+    padding: 0;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+
+/* Sistema de Abas */
+.tabs-header {
+    display: flex;
+    border-bottom: 2px solid #f0f0f0;
+    background: #f8f8f8;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 16px 20px;
+    background: transparent;
+    border: none;
+    font-size: 16px;
+    font-weight: 600;
+    color: #666;
+    cursor: pointer;
+    transition: all 0.3s;
+    position: relative;
+}
+
+.tab-btn:hover {
+    background: rgba(255, 213, 0, 0.1);
+    color: #3F3F41;
+}
+
+.tab-btn.active {
+    background: white;
+    color: #3F3F41;
+}
+
+.tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(135deg, #FFD500 0%, #E59230 100%);
+}
+
+/* Conteúdo das Abas */
+.tab-content {
+    display: none;
+    padding: 25px;
+    animation: fadeIn 0.3s;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .task-selection-card h3 {
@@ -232,6 +296,47 @@ body {
     background: #cccccc;
     cursor: not-allowed;
     transform: none;
+}
+
+/* Botão de Apontamento Atrasado */
+.btn-late {
+    background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
+}
+
+.btn-late:hover:not(:disabled) {
+    box-shadow: 0 5px 15px rgba(255, 152, 0, 0.4);
+}
+
+/* Layout de 2 colunas para data/hora */
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+/* Input de data/hora */
+input[type="datetime-local"] {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    transition: border-color 0.3s;
+}
+
+input[type="datetime-local"]:focus {
+    outline: none;
+    border-color: #FFD500;
+}
+
+/* Responsivo para form-row */
+@media (max-width: 768px) {
+    .form-row {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
 }
 
 /* ===== SEÇÃO DE TAREFAS ATIVAS (NOVO - CARDS MINIMALISTAS) ===== */
