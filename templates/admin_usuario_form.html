@@ -1,0 +1,105 @@
+{% extends "admin_base.html" %}
+
+{% block title %}{% if usuario %}Editar{% else %}Novo{% endif %} Usuário - Admin Booker{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>{% if usuario %}✏️ Editar Usuário{% else %}➕ Novo Usuário{% endif %}</h2>
+
+    <form method="POST" style="max-width: 800px;">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="usuario">Usuário (Login) *</label>
+                <input type="text" id="usuario" name="usuario" 
+                       value="{{ usuario.usuario if usuario else '' }}"
+                       {% if usuario %}readonly{% endif %}
+                       required>
+                {% if not usuario %}
+                <small>Este será o login do usuário. Não pode ser alterado depois.</small>
+                {% endif %}
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email *</label>
+                <input type="email" id="email" name="email" 
+                       value="{{ usuario.email if usuario else '' }}"
+                       required>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="nome_completo">Nome Completo *</label>
+            <input type="text" id="nome_completo" name="nome_completo" 
+                   value="{{ usuario.nome_completo if usuario else '' }}"
+                   required>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="departamento">Departamento *</label>
+                <input type="text" id="departamento" name="departamento" 
+                       value="{{ usuario.departamento if usuario else '' }}"
+                       required>
+            </div>
+
+            <div class="form-group">
+                <label for="nivel">Nível de Acesso *</label>
+                <select id="nivel" name="nivel" required>
+                    <option value="funcionario" {% if usuario and usuario.nivel == 'funcionario' %}selected{% endif %}>Funcionário</option>
+                    <option value="coordenador" {% if usuario and usuario.nivel == 'coordenador' %}selected{% endif %}>Coordenador</option>
+                    <option value="supervisor" {% if usuario and usuario.nivel == 'supervisor' %}selected{% endif %}>Supervisor</option>
+                    <option value="socio" {% if usuario and usuario.nivel == 'socio' %}selected{% endif %}>Sócio</option>
+                    <option value="prestador de servico" {% if usuario and usuario.nivel == 'prestador de servico' %}selected{% endif %}>Prestador de Serviço</option>
+                    <option value="admin" {% if usuario and usuario.nivel == 'admin' %}selected{% endif %}>Admin</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="nome_gestor">Nome do Gestor</label>
+            <input type="text" id="nome_gestor" name="nome_gestor" 
+                   value="{{ usuario.nome_gestor if usuario else '' }}">
+            <small>Opcional - Nome do gestor direto</small>
+        </div>
+
+        {% if usuario %}
+        <div class="form-group">
+            <label for="nova_senha">Nova Senha</label>
+            <input type="password" id="nova_senha" name="nova_senha">
+            <small>Deixe em branco para não alterar a senha</small>
+        </div>
+
+        <div class="form-group checkbox-group">
+            <input type="checkbox" id="ativo" name="ativo" 
+                   {% if usuario.ativo %}checked{% endif %}>
+            <label for="ativo" style="margin: 0;">Usuário Ativo</label>
+        </div>
+        {% else %}
+        <div class="form-group">
+            <label for="senha">Senha</label>
+            <input type="password" id="senha" name="senha" value="Booker@1010">
+            <small>Senha padrão: Booker@1010 (pode ser alterada depois pelo admin)</small>
+        </div>
+        {% endif %}
+
+        <div style="display: flex; gap: 10px; margin-top: 30px;">
+            <button type="submit" class="btn btn-primary">
+                {% if usuario %}💾 Salvar Alterações{% else %}➕ Cadastrar Usuário{% endif %}
+            </button>
+            <a href="{{ url_for('listar_usuarios') }}" class="btn btn-secondary">↩️ Voltar</a>
+        </div>
+    </form>
+</div>
+
+{% if usuario %}
+<div class="card">
+    <h2>⚠️ Informações Importantes</h2>
+    <ul style="line-height: 2; color: #666;">
+        <li><strong>ID:</strong> {{ usuario.id }}</li>
+        <li><strong>Usuário (login):</strong> {{ usuario.usuario }} - Não pode ser alterado</li>
+        <li>Para alterar a senha, preencha o campo "Nova Senha"</li>
+        <li>Desmarque "Usuário Ativo" para desabilitar o acesso sem deletar o usuário</li>
+    </ul>
+</div>
+{% endif %}
+{% endblock %}

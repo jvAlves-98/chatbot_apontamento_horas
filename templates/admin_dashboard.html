@@ -1,0 +1,51 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Dashboard - Admin Booker{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>📊 Visão Geral do Sistema</h2>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <h3>👥 Usuários Ativos</h3>
+        <div class="value">{{ stats.usuarios }}</div>
+    </div>
+
+    <div class="stat-card">
+        <h3>🏢 Clientes Cadastrados</h3>
+        <div class="value">{{ stats.clientes }}</div>
+    </div>
+
+    <div class="stat-card">
+        <h3>📋 Tarefas Totais</h3>
+        <div class="value">{{ stats.tarefas }}</div>
+    </div>
+
+    <div class="stat-card">
+        <h3>📁 Grupos de Tarefas</h3>
+        <div class="value">{{ stats.grupos }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>🚀 Ações Rápidas</h2>
+    <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-top: 20px;">
+        <a href="{{ url_for('novo_usuario') }}" class="btn btn-primary">➕ Novo Usuário</a>
+        <a href="{{ url_for('nova_tarefa') }}" class="btn btn-primary">➕ Nova Tarefa</a>
+        <a href="{{ url_for('listar_usuarios') }}" class="btn btn-secondary">👥 Ver Usuários</a>
+        <a href="{{ url_for('listar_tarefas') }}" class="btn btn-secondary">📋 Ver Tarefas</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>ℹ️ Sobre o Sistema</h2>
+    <p style="line-height: 1.6; color: #666;">
+        <strong>Sistema de Gerenciamento Administrativo</strong><br><br>
+        Este painel permite gerenciar usuários e tarefas do sistema de apontamento de horas da Booker Brasil.<br><br>
+        <strong>⚠️ IMPORTANTE:</strong> Ao editar tarefas, o ID é preservado automaticamente para manter o histórico de apontamentos.
+        Nunca delete tarefas que já possuem apontamentos registrados!
+    </p>
+</div>
+{% endblock %}

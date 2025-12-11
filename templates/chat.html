@@ -9,12 +9,25 @@
 <body>
     <!-- Header fixo no topo -->
     <div class="top-header">
-        <h1>⏱️ Booker Apontamento de Horas</h1>
+        <div class="header-content">
+            <h1>⏱️ Booker Apontamento de Horas</h1>
+            <div class="header-tabs">
+                <button class="header-tab-btn active" data-page="apontamento">
+                    📋 Apontamento
+                </button>
+                <button class="header-tab-btn" data-page="relatorios">
+                    📊 Relatórios
+                </button>
+            </div>
+        </div>
         <div class="user-info">
             <span id="nomeUsuario">{{ usuario }}</span>
             <button id="btnLogout" class="btn-logout">Sair</button>
         </div>
     </div>
+
+    <!-- PÁGINA 1: APONTAMENTO (original) -->
+    <div class="page-content active" id="page-apontamento">
 
     <!-- Container principal com 2 colunas -->
     <div class="main-container">
@@ -172,7 +185,96 @@
             </div>
         </div>
     </div>
+    </div> <!-- Fecha page-apontamento -->
+
+    <!-- PÁGINA 2: RELATÓRIOS -->
+    <div class="page-content" id="page-relatorios">
+        <div class="relatorios-container">
+            <!-- Filtros -->
+            <div class="filtros-card">
+                <h3>🔍 Filtros</h3>
+                <div class="filtros-grid">
+                    <div class="form-group">
+                        <label>📅 Ano</label>
+                        <select id="filtroAno"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>📆 Mês</label>
+                        <select id="filtroMes">
+                            <option value="">Todos</option>
+                            <option value="1">Janeiro</option>
+                            <option value="2">Fevereiro</option>
+                            <option value="3">Março</option>
+                            <option value="4">Abril</option>
+                            <option value="5">Maio</option>
+                            <option value="6">Junho</option>
+                            <option value="7">Julho</option>
+                            <option value="8">Agosto</option>
+                            <option value="9">Setembro</option>
+                            <option value="10">Outubro</option>
+                            <option value="11">Novembro</option>
+                            <option value="12">Dezembro</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>🏢 Departamento</label>
+                        <select id="filtroDepartamento">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>👤 Funcionário</label>
+                        <select id="filtroFuncionario">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>📁 Grupo Cliente</label>
+                        <select id="filtroGrupo">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>📋 Tarefa</label>
+                        <select id="filtroTarefa">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="filtros-actions">
+                    <button id="btnAplicarFiltros" class="btn-primary">
+                        🔍 Aplicar Filtros
+                    </button>
+                    <button id="btnLimparFiltros" class="btn-secondary">
+                        🔄 Limpar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tabela de Relatório -->
+            <div class="relatorio-card">
+                <h3>📊 Tempo Decorrido por Atividades</h3>
+                <div class="relatorio-scroll">
+                    <table id="tabelaRelatorio" class="relatorio-table">
+                        <thead>
+                            <tr id="headerRow">
+                                <th class="col-sticky">Grupo de Empresas</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabelaBody">
+                            <tr>
+                                <td colspan="100" class="no-data">
+                                    📊 Selecione os filtros e clique em "Aplicar Filtros"
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
     
     <script src="/static/js/chat.js"></script>
+    <script src="/static/js/relatorios.js"></script>
 </body>
 </html>

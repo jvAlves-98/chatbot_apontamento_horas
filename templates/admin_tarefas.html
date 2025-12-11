@@ -1,0 +1,175 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Gerenciar Tarefas - Admin Booker{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2>📋 Gerenciar Tarefas</h2>
+        <a href="{{ url_for('nova_tarefa') }}" class="btn btn-primary">➕ Nova Tarefa</a>
+    </div>
+
+    <!-- Filtros -->
+    <form method="GET" class="filters">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="busca">🔍 Buscar</label>
+                <input type="text" id="busca" name="busca" 
+                       placeholder="Nome da tarefa ou cliente..."
+                       value="{{ filtros.busca }}">
+            </div>
+
+            <div class="form-group">
+                <label for="cliente">🏢 Cliente</label>
+                <select id="cliente" name="cliente">
+                    <option value="">Todos os clientes</option>
+                    {% for c in clientes %}
+                    <option value="{{ c }}" {% if filtros.cliente == c %}selected{% endif %}>
+                        {{ c }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="colaborador">👤 Colaborador</label>
+                <select id="colaborador" name="colaborador">
+                    <option value="">Todos os colaboradores</option>
+                    {% for col in colaboradores %}
+                    <option value="{{ col }}" {% if filtros.colaborador == col %}selected{% endif %}>
+                        {{ col }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>&nbsp;</label>
+                <button type="submit" class="btn btn-primary">Filtrar</button>
+                <a href="{{ url_for('listar_tarefas') }}" class="btn btn-secondary">Limpar</a>
+            </div>
+        </div>
+    </form>
+
+    {% if tarefas %}
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Cliente</th>
+                    <th>Tarefa</th>
+                    <th>Grupo</th>
+                    <th>Colaborador 1</th>
+                    <th>Colaborador 2</th>
+                    <th>Horas Est.</th>
+                    <th>Prioridade</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tarefa in tarefas %}
+                <tr>
+                    <td><strong>#{{ tarefa.id }}</strong></td>
+                    <td>
+                        <strong>{{ tarefa.nom_cliente }}</strong><br>
+                        <small style="color: #999;">{{ tarefa.cnpj_cpf }}</small>
+                    </td>
+                    <td>{{ tarefa.nome_tarefa }}</td>
+                    <td>
+                        <span class="badge badge-info">{{ tarefa.cod_grupo_tarefa }}</span><br>
+                        <small>{{ tarefa.nome_grupo_tarefa }}</small>
+                    </td>
+                    <td>{{ tarefa.colaborador_1 }}</td>
+                    <td>{{ tarefa.colaborador_2 or '-' }}</td>
+                    <td>{{ tarefa.estimativa_horas or '-' }}</td>
+                    <td>
+                        {% if tarefa.prioridade %}
+                            {% if 'alta' in tarefa.prioridade|lower or 'p2' in tarefa.prioridade|lower %}
+                                <span class="badge badge-danger">{{ tarefa.prioridade }}</span>
+                            {% elif 'media' in tarefa.prioridade|lower or 'média' in tarefa.prioridade|lower or 'p1' in tarefa.prioridade|lower %}
+                                <span class="badge badge-warning">{{ tarefa.prioridade }}</span>
+                            {% else %}
+                                <span class="badge badge-success">{{ tarefa.prioridade }}</span>
+                            {% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="actions">
+                            <a href="{{ url_for('editar_tarefa', id=tarefa.id) }}" 
+                               class="btn btn-secondary btn-sm">✏️ Editar</a>
+                            <button class="btn btn-danger btn-sm btn-deletar" 
+                                    data-id="{{ tarefa.id }}" 
+                                    data-nome="{{ tarefa.nome_tarefa }}">
+                                🗑️ Deletar
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div style="margin-top: 20px; color: #666;">
+        <strong>Total:</strong> {{ tarefas|length }} tarefa(s)
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <h3>Nenhuma tarefa encontrada</h3>
+        <p>Clique em "Nova Tarefa" para cadastrar ou ajuste os filtros</p>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>⚠️ Atenção ao Deletar Tarefas</h2>
+    <p style="line-height: 1.6; color: #666;">
+        <strong>NÃO É POSSÍVEL deletar tarefas que já possuem apontamentos!</strong><br><br>
+        O sistema bloqueia automaticamente a exclusão de tarefas com histórico para preservar a integridade dos dados.
+        Se precisar "desativar" uma tarefa, edite-a e remova os colaboradores ou altere as informações.
+    </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Event delegation para botões de deletar
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.btn-deletar').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const id = this.dataset.id;
+            const nome = this.dataset.nome;
+            deletarTarefa(id, nome);
+        });
+    });
+});
+
+function deletarTarefa(id, nome) {
+    if (!confirm('⚠️ ATENÇÃO!\n\nTem certeza que deseja deletar a tarefa:\n"' + nome + '"\n\nEsta ação não pode ser desfeita!')) {
+        return;
+    }
+
+    fetch('/tarefas/deletar/' + id, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('✅ ' + data.message);
+            location.reload();
+        } else {
+            alert('❌ ' + data.message);
+        }
+    })
+    .catch(error => {
+        alert('❌ Erro ao deletar tarefa: ' + error);
+    });
+}
+</script>
+{% endblock %}

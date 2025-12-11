@@ -1,0 +1,78 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Gerenciar Usuários - Admin Booker{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2>👥 Gerenciar Usuários</h2>
+        <a href="{{ url_for('novo_usuario') }}" class="btn btn-primary">➕ Novo Usuário</a>
+    </div>
+
+    {% if usuarios %}
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Usuário</th>
+                    <th>Nome Completo</th>
+                    <th>Email</th>
+                    <th>Departamento</th>
+                    <th>Nível</th>
+                    <th>Gestor</th>
+                    <th>Status</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for usuario in usuarios %}
+                <tr>
+                    <td>{{ usuario.id }}</td>
+                    <td><strong>{{ usuario.usuario }}</strong></td>
+                    <td>{{ usuario.nome_completo }}</td>
+                    <td>{{ usuario.email }}</td>
+                    <td>{{ usuario.departamento }}</td>
+                    <td>
+                        {% if usuario.nivel == 'admin' %}
+                            <span class="badge badge-danger">ADMIN</span>
+                        {% elif usuario.nivel == 'socio' %}
+                            <span class="badge badge-warning">SÓCIO</span>
+                        {% elif usuario.nivel == 'supervisor' %}
+                            <span class="badge badge-info">SUPERVISOR</span>
+                        {% elif usuario.nivel == 'coordenador' %}
+                            <span class="badge badge-info">COORDENADOR</span>
+                        {% else %}
+                            <span class="badge badge-success">{{ usuario.nivel|upper }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ usuario.nome_gestor or '-' }}</td>
+                    <td>
+                        {% if usuario.ativo %}
+                            <span class="badge badge-success">✓ Ativo</span>
+                        {% else %}
+                            <span class="badge badge-danger">✗ Inativo</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="actions">
+                            <a href="{{ url_for('editar_usuario', id=usuario.id) }}" class="btn btn-secondary btn-sm">✏️ Editar</a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div style="margin-top: 20px; color: #666;">
+        <strong>Total:</strong> {{ usuarios|length }} usuário(s)
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <h3>Nenhum usuário encontrado</h3>
+        <p>Clique em "Novo Usuário" para cadastrar</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

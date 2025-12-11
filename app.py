@@ -698,6 +698,196 @@ def verificar_tarefas_ativas():
         conn.close()
 
 # ========================================
+# ROTAS DE RELATÓRIOS
+# ========================================
+
+@app.route('/api/relatorio-tempo', methods=['POST'])
+def relatorio_tempo():
+    """Retorna relatório de tempo decorrido por atividades"""
+    if 'usuario' not in session:
+        return jsonify({'success': False, 'message': 'Não autenticado'}), 401
+    
+    dados = request.get_json()
+    filtros = {
+        'ano': dados.get('ano'),
+        'mes': dados.get('mes'),
+        'departamento': dados.get('departamento'),
+        'funcionario': dados.get('funcionario'),
+        'grupo': dados.get('grupo'),
+        'tarefa': dados.get('tarefa')
+    }
+    
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'success': False, 'message': 'Erro de conexão'}), 500
+    
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Construir query dinâmica com filtros
+        where_clauses = ["a.status = 'finalizado'"]
+        params = []
+        
+        if filtros['ano']:
+            where_clauses.append("EXTRACT(YEAR FROM a.data_inicio AT TIME ZONE 'America/Sao_Paulo') = %s")
+            params.append(filtros['ano'])
+        
+        if filtros['mes']:
+            where_clauses.append("EXTRACT(MONTH FROM a.data_inicio AT TIME ZONE 'America/Sao_Paulo') = %s")
+            params.append(filtros['mes'])
+        
+        if filtros['departamento'] and filtros['departamento'] != 'Todos':
+            where_clauses.append("f.departamento = %s")
+            params.append(filtros['departamento'])
+        
+        if filtros['funcionario'] and filtros['funcionario'] != 'Todos':
+            where_clauses.append("f.usuario = %s")
+            params.append(filtros['funcionario'])
+        
+        if filtros['grupo'] and filtros['grupo'] != 'Todos':
+            where_clauses.append("c.cod_grupo_cliente = %s::INTEGER")
+            params.append(filtros['grupo'])
+        
+        if filtros['tarefa'] and filtros['tarefa'] != 'Todos':
+            where_clauses.append("t.cod_grupo_tarefa = %s")
+            params.append(filtros['tarefa'])
+        
+        where_sql = " AND ".join(where_clauses)
+        
+        # Query principal
+        query = f"""
+            SELECT 
+                c.des_grupo AS grupo_empresa,
+                c.nom_cliente AS nome_cliente,
+                f.nome_completo AS funcionario,
+                t.cod_grupo_tarefa,
+                gt.nome_grupo_tarefa AS nome_tarefa,
+                COALESCE(
+                    ROUND(
+                        EXTRACT(EPOCH FROM SUM(a.horas_trabalhadas)) / 3600, 
+                        2
+                    ), 
+                    0
+                ) AS horas_totais
+            FROM apontador_horas.apontamentos_horas a
+            INNER JOIN apontador_horas.funcionarios f ON a.funcionario_id = f.id
+            INNER JOIN apontador_horas.clientes c ON a.cliente_id = c.id
+            INNER JOIN apontador_horas.tarefas_colaborador t ON a.tarefa_id = t.id
+            INNER JOIN apontador_horas.grupo_tarefas gt ON t.cod_grupo_tarefa = gt.cod_grupo_tarefa
+            WHERE {where_sql}
+            GROUP BY 
+                c.des_grupo,
+                c.nom_cliente,
+                f.nome_completo,
+                t.cod_grupo_tarefa,
+                gt.nome_grupo_tarefa
+            ORDER BY 
+                c.des_grupo,
+                c.nom_cliente,
+                f.nome_completo,
+                gt.nome_grupo_tarefa
+        """
+        
+        cursor.execute(query, params)
+        resultados = cursor.fetchall()
+        
+        # Organizar dados hierarquicamente
+        dados_hierarquicos = {}
+        
+        for row in resultados:
+            grupo = row['grupo_empresa'] or 'SEM GRUPO'
+            cliente = row['nome_cliente']
+            funcionario = row['funcionario']
+            tarefa = row['nome_tarefa']
+            horas = float(row['horas_totais'])
+            
+            if grupo not in dados_hierarquicos:
+                dados_hierarquicos[grupo] = {}
+            
+            if cliente not in dados_hierarquicos[grupo]:
+                dados_hierarquicos[grupo][cliente] = {}
+            
+            if funcionario not in dados_hierarquicos[grupo][cliente]:
+                dados_hierarquicos[grupo][cliente][funcionario] = {}
+            
+            dados_hierarquicos[grupo][cliente][funcionario][tarefa] = horas
+        
+        return jsonify({
+            'success': True,
+            'dados': dados_hierarquicos
+        })
+        
+    except Exception as e:
+        print(f"❌ Erro ao gerar relatório: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/filtros-relatorio', methods=['GET'])
+def filtros_relatorio():
+    """Retorna opções disponíveis para filtros"""
+    if 'usuario' not in session:
+        return jsonify({'success': False, 'message': 'Não autenticado'}), 401
+    
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'success': False, 'message': 'Erro de conexão'}), 500
+    
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Departamentos
+        cursor.execute("""
+            SELECT DISTINCT departamento 
+            FROM apontador_horas.funcionarios 
+            WHERE ativo = TRUE 
+            ORDER BY departamento
+        """)
+        departamentos = [r['departamento'] for r in cursor.fetchall()]
+        
+        # Funcionários
+        cursor.execute("""
+            SELECT usuario, nome_completo 
+            FROM apontador_horas.funcionarios 
+            WHERE ativo = TRUE 
+            ORDER BY nome_completo
+        """)
+        funcionarios = cursor.fetchall()
+        
+        # Grupos de clientes
+        cursor.execute("""
+            SELECT DISTINCT cod_grupo_cliente, des_grupo 
+            FROM apontador_horas.clientes 
+            WHERE cod_grupo_cliente IS NOT NULL 
+            ORDER BY des_grupo
+        """)
+        grupos_clientes = cursor.fetchall()
+        
+        # Grupos de tarefas
+        cursor.execute("""
+            SELECT cod_grupo_tarefa, nome_grupo_tarefa 
+            FROM apontador_horas.grupo_tarefas 
+            ORDER BY cod_grupo_tarefa
+        """)
+        grupos_tarefas = cursor.fetchall()
+        
+        return jsonify({
+            'success': True,
+            'departamentos': departamentos,
+            'funcionarios': [dict(f) for f in funcionarios],
+            'grupos_clientes': [dict(g) for g in grupos_clientes],
+            'grupos_tarefas': [dict(g) for g in grupos_tarefas]
+        })
+        
+    except Exception as e:
+        print(f"❌ Erro ao buscar filtros: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        conn.close()
+
+# ========================================
 # ROTA DE CHAT (mantém compatibilidade)
 # ========================================
 

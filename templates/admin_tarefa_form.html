@@ -1,0 +1,165 @@
+{% extends "admin_base.html" %}
+
+{% block title %}{% if tarefa %}Editar{% else %}Nova{% endif %} Tarefa - Admin Booker{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>{% if tarefa %}✏️ Editar Tarefa{% else %}➕ Nova Tarefa{% endif %}</h2>
+
+    {% if tarefa %}
+    <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
+        <strong>⚠️ IMPORTANTE:</strong> O ID da tarefa (#{{ tarefa.id }}) será preservado automaticamente para manter o histórico de apontamentos!
+    </div>
+    {% endif %}
+
+    <form method="POST" style="max-width: 900px;">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="cnpj_cpf">🏢 Cliente *</label>
+                <select id="cnpj_cpf" name="cnpj_cpf" required onchange="updateClienteInfo()">
+                    <option value="">Selecione um cliente...</option>
+                    {% for cliente in clientes %}
+                    <option value="{{ cliente.num_cnpj_cpf }}" 
+                            data-nome="{{ cliente.nom_cliente }}"
+                            {% if tarefa and tarefa.cnpj_cpf == cliente.num_cnpj_cpf %}selected{% endif %}>
+                        {{ cliente.nom_cliente }} ({{ cliente.num_cnpj_cpf }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="cod_grupo_tarefa">📁 Grupo de Tarefa *</label>
+                <select id="cod_grupo_tarefa" name="cod_grupo_tarefa" required>
+                    <option value="">Selecione um grupo...</option>
+                    {% for grupo in grupos %}
+                    <option value="{{ grupo.cod_grupo_tarefa }}"
+                            {% if tarefa and tarefa.cod_grupo_tarefa == grupo.cod_grupo_tarefa %}selected{% endif %}>
+                        {{ grupo.cod_grupo_tarefa }} - {{ grupo.nome_grupo_tarefa }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="nome_tarefa">📋 Nome da Tarefa *</label>
+            <input type="text" id="nome_tarefa" name="nome_tarefa" 
+                   value="{{ tarefa.nome_tarefa if tarefa else '' }}"
+                   placeholder="Ex: Auditoria Fiscal 2025, Declaração IRPJ..."
+                   required>
+            <small>Seja descritivo para facilitar a identificação</small>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="colaborador_1">👤 Colaborador Principal *</label>
+                <select id="colaborador_1" name="colaborador_1" required>
+                    <option value="">Selecione...</option>
+                    {% for colab in colaboradores %}
+                    <option value="{{ colab.usuario }}"
+                            {% if tarefa and tarefa.colaborador_1 == colab.usuario %}selected{% endif %}>
+                        {{ colab.nome_completo }} ({{ colab.usuario }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="colaborador_2">👥 Colaborador Secundário</label>
+                <select id="colaborador_2" name="colaborador_2">
+                    <option value="">Nenhum (opcional)</option>
+                    {% for colab in colaboradores %}
+                    <option value="{{ colab.usuario }}"
+                            {% if tarefa and tarefa.colaborador_2 == colab.usuario %}selected{% endif %}>
+                        {{ colab.nome_completo }} ({{ colab.usuario }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="estimativa_horas">⏱️ Estimativa de Horas</label>
+                <input type="number" id="estimativa_horas" name="estimativa_horas" 
+                       step="0.5" min="0"
+                       value="{{ tarefa.estimativa_horas if tarefa else '' }}"
+                       placeholder="Ex: 40">
+                <small>Opcional - Total estimado de horas para conclusão</small>
+            </div>
+
+            <div class="form-group">
+                <label for="prioridade">🎯 Prioridade</label>
+                <select id="prioridade" name="prioridade">
+                    <option value="">Nenhuma (opcional)</option>
+                    <option value="P3-Baixa" {% if tarefa and tarefa.prioridade == 'P3-Baixa' %}selected{% endif %}>P3 - Baixa</option>
+                    <option value="P1-Media" {% if tarefa and tarefa.prioridade == 'P1-Media' %}selected{% endif %}>P1 - Média</option>
+                    <option value="P2-Alta" {% if tarefa and tarefa.prioridade == 'P2-Alta' %}selected{% endif %}>P2 - Alta</option>
+                    <option value="Urgente" {% if tarefa and tarefa.prioridade == 'Urgente' %}selected{% endif %}>Urgente</option>
+                </select>
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; margin-top: 30px;">
+            <button type="submit" class="btn btn-primary">
+                {% if tarefa %}💾 Salvar Alterações (ID Preservado){% else %}➕ Cadastrar Tarefa{% endif %}
+            </button>
+            <a href="{{ url_for('listar_tarefas') }}" class="btn btn-secondary">↩️ Voltar</a>
+        </div>
+    </form>
+</div>
+
+{% if tarefa %}
+<div class="card">
+    <h2>ℹ️ Informações da Tarefa</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+        <div>
+            <strong>ID da Tarefa:</strong><br>
+            <span style="font-size: 24px; color: #FFD500;">
+                #{{ tarefa.id }}
+            </span>
+        </div>
+        <div>
+            <strong>CNPJ/CPF:</strong><br>
+            {{ tarefa.cnpj_cpf }}
+        </div>
+        <div>
+            <strong>Cliente:</strong><br>
+            {{ tarefa.nome_empresa or '-' }}
+        </div>
+    </div>
+    
+    <div style="margin-top: 20px; padding: 15px; background: #d1ecf1; border-radius: 8px; border-left: 4px solid #0c5460;">
+        <strong>🔒 Garantia de Integridade:</strong><br>
+        O ID #{{ tarefa.id }} é mantido ao salvar as alterações. Todos os apontamentos históricos continuarão vinculados a esta tarefa.
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <h2>💡 Dicas</h2>
+    <ul style="line-height: 2; color: #666;">
+        <li><strong>Nome da Tarefa:</strong> Use nomes descritivos como "Auditoria Fiscal 2025" ao invés de apenas "Auditoria"</li>
+        <li><strong>Colaboradores:</strong> O Colaborador Principal é obrigatório. O Secundário é opcional para tarefas em dupla</li>
+        <li><strong>Estimativa:</strong> Ajuda no planejamento, mas não é obrigatório</li>
+        <li><strong>Prioridade:</strong> P3=Baixa, P1=Média, P2=Alta (ordem Booker)</li>
+        {% if tarefa %}
+        <li><strong>Histórico:</strong> Esta tarefa mantém seu ID (#{{ tarefa.id }}) e todos os apontamentos vinculados</li>
+        {% endif %}
+    </ul>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateClienteInfo() {
+    const select = document.getElementById('cnpj_cpf');
+    const option = select.options[select.selectedIndex];
+    
+    if (option.value) {
+        console.log('Cliente selecionado:', option.dataset.nome);
+    }
+}
+</script>
+{% endblock %}
