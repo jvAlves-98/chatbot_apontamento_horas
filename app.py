@@ -86,6 +86,58 @@ def verificar_usuario(usuario, senha):
     finally:
         conn.close()
 
+def get_usuarios_permitidos(usuario_logado, nivel_logado):
+    """
+    Retorna lista de usuários que o usuário logado pode visualizar
+    
+    Regras:
+    - funcionario, prestador de servico: apenas ele mesmo
+    - coordenador, supervisor: ele mesmo + subordinados (onde ele é gestor)
+    - socio, admin: todos os usuários
+    """
+    conn = get_db_connection()
+    if not conn:
+        return [usuario_logado]  # Fallback: apenas ele mesmo
+    
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Admin e Sócio: todos os usuários
+        if nivel_logado in ['admin', 'socio']:
+            cursor.execute("""
+                SELECT usuario FROM funcionarios WHERE ativo = TRUE
+            """)
+            usuarios = [r['usuario'] for r in cursor.fetchall()]
+            print(f"🔓 {usuario_logado} ({nivel_logado}): acesso TOTAL a {len(usuarios)} usuários")
+            return usuarios
+        
+        # Coordenador e Supervisor: ele mesmo + subordinados
+        elif nivel_logado in ['coordenador', 'supervisor']:
+            # Buscar: ele mesmo + quem tem ele como gestor no campo nome_gestor
+            cursor.execute("""
+                SELECT usuario 
+                FROM funcionarios 
+                WHERE ativo = TRUE 
+                  AND (usuario = %s OR nome_gestor = %s)
+            """, (usuario_logado, usuario_logado))
+            
+            usuarios = [r['usuario'] for r in cursor.fetchall()]
+            print(f"👥 {usuario_logado} ({nivel_logado}): acesso a {len(usuarios)} usuários (ele + subordinados)")
+            return usuarios
+        
+        # Funcionário e Prestador: apenas ele mesmo
+        else:
+            print(f"🔒 {usuario_logado} ({nivel_logado}): acesso RESTRITO (apenas ele mesmo)")
+            return [usuario_logado]
+        
+    except Exception as e:
+        print(f"❌ Erro ao buscar usuários permitidos: {e}")
+        import traceback
+        traceback.print_exc()
+        return [usuario_logado]  # Fallback: apenas ele mesmo
+    finally:
+        conn.close()
+
 # ========================================
 # ROTAS DE AUTENTICAÇÃO
 # ========================================
@@ -122,7 +174,7 @@ def login():
         session['session_id'] = session_id
         session.permanent = True
         
-        print(f"✅ Login: {user['usuario']} | Session ID: {session_id}")
+        print(f"✅ Login: {user['usuario']} | Nível: {user['nivel']} | Session ID: {session_id}")
         
         return jsonify({'success': True, 'message': 'Login realizado com sucesso'})
     
@@ -698,7 +750,7 @@ def verificar_tarefas_ativas():
         conn.close()
 
 # ========================================
-# ROTAS DE RELATÓRIOS
+# ROTAS DE RELATÓRIOS (COM CONTROLE DE ACESSO)
 # ========================================
 
 @app.route('/api/relatorio-tempo', methods=['POST'])
@@ -706,6 +758,9 @@ def relatorio_tempo():
     """Retorna relatório de tempo decorrido por atividades"""
     if 'usuario' not in session:
         return jsonify({'success': False, 'message': 'Não autenticado'}), 401
+    
+    usuario_logado = session.get('usuario')
+    nivel_logado = session.get('nivel')
     
     dados = request.get_json()
     filtros = {
@@ -724,9 +779,16 @@ def relatorio_tempo():
     try:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
+        # 🔐 CONTROLE DE ACESSO: Obter usuários permitidos
+        usuarios_permitidos = get_usuarios_permitidos(usuario_logado, nivel_logado)
+        
         # Construir query dinâmica com filtros
         where_clauses = ["a.status = 'finalizado'"]
         params = []
+        
+        # 🔐 FILTRO OBRIGATÓRIO: Usuários permitidos
+        where_clauses.append(f"f.usuario = ANY(%s)")
+        params.append(usuarios_permitidos)
         
         if filtros['ano']:
             where_clauses.append("EXTRACT(YEAR FROM a.data_inicio AT TIME ZONE 'America/Sao_Paulo') = %s")
@@ -741,8 +803,13 @@ def relatorio_tempo():
             params.append(filtros['departamento'])
         
         if filtros['funcionario'] and filtros['funcionario'] != 'Todos':
-            where_clauses.append("f.usuario = %s")
-            params.append(filtros['funcionario'])
+            # Verificar se o usuário filtrado está na lista permitida
+            if filtros['funcionario'] in usuarios_permitidos:
+                where_clauses.append("f.usuario = %s")
+                params.append(filtros['funcionario'])
+            else:
+                # Se tentar filtrar por um usuário não permitido, retorna vazio
+                return jsonify({'success': True, 'dados': {}})
         
         if filtros['grupo'] and filtros['grupo'] != 'Todos':
             where_clauses.append("c.cod_grupo_cliente = %s::INTEGER")
@@ -812,6 +879,8 @@ def relatorio_tempo():
             
             dados_hierarquicos[grupo][cliente][funcionario][tarefa] = horas
         
+        print(f"📊 Relatório gerado: {usuario_logado} ({nivel_logado}) - {len(resultados)} registros")
+        
         return jsonify({
             'success': True,
             'dados': dados_hierarquicos
@@ -825,11 +894,20 @@ def relatorio_tempo():
     finally:
         conn.close()
 
-@app.route('/api/filtros-relatorio', methods=['GET'])
-def filtros_relatorio():
-    """Retorna opções disponíveis para filtros"""
+@app.route('/api/dashboard-dados', methods=['POST'])
+def dashboard_dados():
+    """Retorna dados para o dashboard"""
     if 'usuario' not in session:
         return jsonify({'success': False, 'message': 'Não autenticado'}), 401
+    
+    dados = request.get_json()
+    filtros = {
+        'ano': dados.get('ano'),
+        'mes': dados.get('mes')
+    }
+    
+    usuario = session.get('usuario')
+    nivel = session.get('nivel', 'funcionario')
     
     conn = get_db_connection()
     if not conn:
@@ -838,25 +916,409 @@ def filtros_relatorio():
     try:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
-        # Departamentos
+        # Obter usuários permitidos (controle de acesso)
+        usuarios_permitidos = get_usuarios_permitidos(usuario, nivel)
+        
+        # Construir filtros de data
+        where_clauses = ["a.status = 'finalizado'"]
+        params = []
+        
+        if filtros['ano']:
+            where_clauses.append("EXTRACT(YEAR FROM a.data_inicio AT TIME ZONE 'America/Sao_Paulo') = %s")
+            params.append(filtros['ano'])
+        
+        if filtros['mes']:
+            where_clauses.append("EXTRACT(MONTH FROM a.data_inicio AT TIME ZONE 'America/Sao_Paulo') = %s")
+            params.append(filtros['mes'])
+        
+        # Filtro de usuários permitidos
+        if usuarios_permitidos:
+            placeholders = ','.join(['%s'] * len(usuarios_permitidos))
+            where_clauses.append(f"f.usuario IN ({placeholders})")
+            params.extend(usuarios_permitidos)
+        
+        where_sql = " AND ".join(where_clauses)
+        
+        # ==== RESUMO GERAL ====
+        cursor.execute(f"""
+            SELECT 
+                COUNT(*) as total_tarefas
+            FROM apontador_horas.apontamentos_horas a
+            INNER JOIN apontador_horas.funcionarios f ON a.funcionario_id = f.id
+            WHERE {where_sql}
+        """, params)
+        resumo_result = cursor.fetchone()
+        total_tarefas = resumo_result['total_tarefas'] if resumo_result else 0
+        
+        # Para simplificar, consideramos todas como concluídas (status = 'finalizado')
+        tarefas_concluidas = total_tarefas
+        tarefas_nao_concluidas = 0  # Poderia buscar de outra tabela se necessário
+        
+        resumo = {
+            'total': total_tarefas,
+            'concluidas': tarefas_concluidas,
+            'nao_concluidas': tarefas_nao_concluidas
+        }
+        
+        # ==== TAREFAS POR DEPARTAMENTO ====
+        cursor.execute(f"""
+            SELECT 
+                f.departamento,
+                COUNT(*) as quantidade
+            FROM apontador_horas.apontamentos_horas a
+            INNER JOIN apontador_horas.funcionarios f ON a.funcionario_id = f.id
+            WHERE {where_sql}
+            GROUP BY f.departamento
+            ORDER BY quantidade DESC
+        """, params)
+        por_departamento = [dict(row) for row in cursor.fetchall()]
+        
+        # ==== TAREFAS POR GRUPO DE ATIVIDADE ====
+        cursor.execute(f"""
+            SELECT 
+                gt.nome_grupo_tarefa as grupo_atividade,
+                COUNT(*) as quantidade
+            FROM apontador_horas.apontamentos_horas a
+            INNER JOIN apontador_horas.funcionarios f ON a.funcionario_id = f.id
+            INNER JOIN apontador_horas.tarefas_colaborador t ON a.tarefa_id = t.id
+            INNER JOIN apontador_horas.grupo_tarefas gt ON t.cod_grupo_tarefa = gt.cod_grupo_tarefa
+            WHERE {where_sql}
+            GROUP BY gt.nome_grupo_tarefa
+            ORDER BY quantidade DESC
+        """, params)
+        por_grupo_atividade = [dict(row) for row in cursor.fetchall()]
+        
+        # ==== LINHA DO TEMPO MENSAL ====
+        # Se mês específico foi selecionado, mostrar dia a dia
+        if filtros['mes']:
+            cursor.execute(f"""
+                SELECT 
+                    TO_CHAR(a.data_inicio AT TIME ZONE 'America/Sao_Paulo', 'DD/MM') as dia,
+                    COUNT(*) as quantidade
+                FROM apontador_horas.apontamentos_horas a
+                INNER JOIN apontador_horas.funcionarios f ON a.funcionario_id = f.id
+                WHERE {where_sql}
+                GROUP BY TO_CHAR(a.data_inicio AT TIME ZONE 'America/Sao_Paulo', 'DD/MM'),
+                         DATE(a.data_inicio AT TIME ZONE 'America/Sao_Paulo')
+                ORDER BY DATE(a.data_inicio AT TIME ZONE 'America/Sao_Paulo')
+            """, params)
+        else:
+            # Se não selecionou mês, mostrar mês a mês
+            cursor.execute(f"""
+                SELECT 
+                    TO_CHAR(a.data_inicio AT TIME ZONE 'America/Sao_Paulo', 'Mon') as dia,
+                    COUNT(*) as quantidade
+                FROM apontador_horas.apontamentos_horas a
+                INNER JOIN apontador_horas.funcionarios f ON a.funcionario_id = f.id
+                WHERE {where_sql}
+                GROUP BY TO_CHAR(a.data_inicio AT TIME ZONE 'America/Sao_Paulo', 'Mon'),
+                         EXTRACT(MONTH FROM a.data_inicio AT TIME ZONE 'America/Sao_Paulo')
+                ORDER BY EXTRACT(MONTH FROM a.data_inicio AT TIME ZONE 'America/Sao_Paulo')
+            """, params)
+        
+        tempo_mensal = [dict(row) for row in cursor.fetchall()]
+        
+        return jsonify({
+            'success': True,
+            'resumo': resumo,
+            'por_departamento': por_departamento,
+            'por_grupo_atividade': por_grupo_atividade,
+            'tempo_mensal': tempo_mensal
+        })
+        
+    except Exception as e:
+        print(f"❌ Erro ao gerar dashboard: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/exportar-relatorio-excel', methods=['POST'])
+def exportar_relatorio_excel():
+    """Exporta relatório para Excel"""
+    if 'usuario' not in session:
+        return jsonify({'success': False, 'message': 'Não autenticado'}), 401
+    
+    usuario_logado = session.get('usuario')
+    nivel_logado = session.get('nivel')
+    
+    dados = request.get_json()
+    filtros = {
+        'ano': dados.get('ano'),
+        'mes': dados.get('mes'),
+        'departamento': dados.get('departamento'),
+        'funcionario': dados.get('funcionario'),
+        'grupo': dados.get('grupo'),
+        'tarefa': dados.get('tarefa')
+    }
+    
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'success': False, 'message': 'Erro de conexão'}), 500
+    
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+        from io import BytesIO
+        from datetime import datetime
+        
+        # Buscar usuários permitidos
+        usuarios_permitidos = get_usuarios_permitidos(usuario_logado, nivel_logado)
+        
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Construir query (mesma lógica do relatório web)
+        where_clauses = ["a.status = 'finalizado'"]
+        params = []
+        
+        # Filtro obrigatório: apenas usuários permitidos
+        where_clauses.append("f.usuario = ANY(%s)")
+        params.append(usuarios_permitidos)
+        
+        if filtros['ano']:
+            where_clauses.append("EXTRACT(YEAR FROM a.data_inicio AT TIME ZONE 'America/Sao_Paulo') = %s")
+            params.append(filtros['ano'])
+        
+        if filtros['mes']:
+            where_clauses.append("EXTRACT(MONTH FROM a.data_inicio AT TIME ZONE 'America/Sao_Paulo') = %s")
+            params.append(filtros['mes'])
+        
+        if filtros['departamento'] and filtros['departamento'] != 'Todos':
+            where_clauses.append("f.departamento = %s")
+            params.append(filtros['departamento'])
+        
+        if filtros['funcionario'] and filtros['funcionario'] != 'Todos':
+            if filtros['funcionario'] in usuarios_permitidos:
+                where_clauses.append("f.usuario = %s")
+                params.append(filtros['funcionario'])
+            else:
+                return jsonify({'success': False, 'message': 'Acesso negado'}), 403
+        
+        if filtros['grupo'] and filtros['grupo'] != 'Todos':
+            where_clauses.append("c.cod_grupo_cliente = %s::INTEGER")
+            params.append(filtros['grupo'])
+        
+        if filtros['tarefa'] and filtros['tarefa'] != 'Todos':
+            where_clauses.append("t.cod_grupo_tarefa = %s")
+            params.append(filtros['tarefa'])
+        
+        where_sql = " AND ".join(where_clauses)
+        
+        # Query principal
+        query = f"""
+            SELECT 
+                c.des_grupo AS grupo_empresa,
+                c.nom_cliente AS nome_cliente,
+                f.nome_completo AS funcionario,
+                gt.nome_grupo_tarefa AS nome_tarefa,
+                COALESCE(
+                    ROUND(
+                        EXTRACT(EPOCH FROM SUM(a.horas_trabalhadas)) / 3600, 
+                        2
+                    ), 
+                    0
+                ) AS horas_totais
+            FROM apontador_horas.apontamentos_horas a
+            INNER JOIN apontador_horas.funcionarios f ON a.funcionario_id = f.id
+            INNER JOIN apontador_horas.clientes c ON a.cliente_id = c.id
+            INNER JOIN apontador_horas.tarefas_colaborador t ON a.tarefa_id = t.id
+            INNER JOIN apontador_horas.grupo_tarefas gt ON t.cod_grupo_tarefa = gt.cod_grupo_tarefa
+            WHERE {where_sql}
+            GROUP BY 
+                c.des_grupo,
+                c.nom_cliente,
+                f.nome_completo,
+                gt.nome_grupo_tarefa
+            ORDER BY 
+                c.des_grupo,
+                c.nom_cliente,
+                f.nome_completo,
+                gt.nome_grupo_tarefa
+        """
+        
+        cursor.execute(query, params)
+        resultados = cursor.fetchall()
+        
+        if len(resultados) == 0:
+            return jsonify({'success': False, 'message': 'Nenhum dado para exportar'}), 400
+        
+        # Criar workbook
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Relatório de Horas"
+        
+        # Estilos
+        header_fill = PatternFill(start_color="FFD500", end_color="FFD500", fill_type="solid")
+        header_font = Font(bold=True, color="3F3F41", size=12)
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        
+        # Título
+        ws.merge_cells('A1:E1')
+        title_cell = ws['A1']
+        title_cell.value = "RELATÓRIO DE APONTAMENTO DE HORAS - BOOKER BRASIL"
+        title_cell.font = Font(bold=True, size=14, color="3F3F41")
+        title_cell.fill = PatternFill(start_color="FFD500", end_color="FFD500", fill_type="solid")
+        title_cell.alignment = Alignment(horizontal='center', vertical='center')
+        
+        # Informações do filtro
+        linha = 3
+        ws[f'A{linha}'] = f"Gerado por: {session.get('nome_completo', usuario_logado)}"
+        ws[f'A{linha}'].font = Font(bold=True)
+        linha += 1
+        
+        ws[f'A{linha}'] = f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        ws[f'A{linha}'].font = Font(bold=True)
+        linha += 1
+        
+        # Filtros aplicados
+        if filtros['ano']:
+            ws[f'A{linha}'] = f"Ano: {filtros['ano']}"
+            linha += 1
+        if filtros['mes']:
+            meses = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+            ws[f'A{linha}'] = f"Mês: {meses[int(filtros['mes'])]}"
+            linha += 1
+        
+        linha += 1  # Linha em branco
+        
+        # Cabeçalhos
+        headers = ['Grupo de Empresas', 'Cliente', 'Funcionário', 'Tarefa', 'Horas']
+        for col_num, header in enumerate(headers, 1):
+            cell = ws.cell(row=linha, column=col_num)
+            cell.value = header
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            cell.border = border
+        
+        linha += 1
+        
+        # Função para converter horas decimais em formato HH:MM
+        def converter_horas_para_tempo(horas_decimal):
+            """Converte horas decimais (ex: 2.5) para formato de tempo HH:MM (ex: 02:30)"""
+            horas = int(horas_decimal)
+            minutos = int((horas_decimal - horas) * 60)
+            return f"{horas:02d}:{minutos:02d}"
+        
+        # Dados
+        total_geral = 0
+        for row in resultados:
+            ws.cell(row=linha, column=1, value=row['grupo_empresa'] or 'SEM GRUPO')
+            ws.cell(row=linha, column=2, value=row['nome_cliente'])
+            ws.cell(row=linha, column=3, value=row['funcionario'])
+            ws.cell(row=linha, column=4, value=row['nome_tarefa'])
+            
+            # Converter horas decimais para formato HH:MM
+            horas_decimal = float(row['horas_totais'])
+            horas_formatadas = converter_horas_para_tempo(horas_decimal)
+            
+            horas_cell = ws.cell(row=linha, column=5, value=horas_formatadas)
+            horas_cell.alignment = Alignment(horizontal='center')
+            
+            total_geral += horas_decimal
+            
+            # Aplicar bordas
+            for col in range(1, 6):
+                ws.cell(row=linha, column=col).border = border
+            
+            linha += 1
+        
+        # Total geral
+        linha += 1
+        total_cell = ws.cell(row=linha, column=4)
+        total_cell.value = "TOTAL GERAL:"
+        total_cell.font = Font(bold=True, size=12)
+        total_cell.alignment = Alignment(horizontal='right')
+        
+        # Converter total geral para formato HH:MM
+        total_formatado = converter_horas_para_tempo(total_geral)
+        
+        total_value_cell = ws.cell(row=linha, column=5)
+        total_value_cell.value = total_formatado
+        total_value_cell.font = Font(bold=True, size=12)
+        total_value_cell.fill = PatternFill(start_color="FFF9E6", end_color="FFF9E6", fill_type="solid")
+        total_value_cell.alignment = Alignment(horizontal='center')
+        
+        # Ajustar largura das colunas
+        ws.column_dimensions['A'].width = 25
+        ws.column_dimensions['B'].width = 35
+        ws.column_dimensions['C'].width = 30
+        ws.column_dimensions['D'].width = 30
+        ws.column_dimensions['E'].width = 12
+        
+        # Salvar em BytesIO
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        # Gerar nome do arquivo
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        nome_arquivo = f"relatorio_horas_{timestamp}.xlsx"
+        
+        print(f"📊 Excel exportado: {usuario_logado} - {len(resultados)} registros")
+        
+        from flask import send_file
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=nome_arquivo
+        )
+        
+    except Exception as e:
+        print(f"❌ Erro ao exportar Excel: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/filtros-relatorio', methods=['GET'])
+def filtros_relatorio():
+    """Retorna opções disponíveis para filtros (com controle de acesso)"""
+    if 'usuario' not in session:
+        return jsonify({'success': False, 'message': 'Não autenticado'}), 401
+    
+    usuario_logado = session.get('usuario')
+    nivel_logado = session.get('nivel')
+    
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'success': False, 'message': 'Erro de conexão'}), 500
+    
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # 🔐 CONTROLE DE ACESSO: Obter usuários permitidos
+        usuarios_permitidos = get_usuarios_permitidos(usuario_logado, nivel_logado)
+        
+        # Departamentos (dos usuários permitidos)
         cursor.execute("""
             SELECT DISTINCT departamento 
             FROM apontador_horas.funcionarios 
-            WHERE ativo = TRUE 
+            WHERE ativo = TRUE AND usuario = ANY(%s)
             ORDER BY departamento
-        """)
+        """, (usuarios_permitidos,))
         departamentos = [r['departamento'] for r in cursor.fetchall()]
         
-        # Funcionários
+        # Funcionários (somente os permitidos)
         cursor.execute("""
             SELECT usuario, nome_completo 
             FROM apontador_horas.funcionarios 
-            WHERE ativo = TRUE 
+            WHERE ativo = TRUE AND usuario = ANY(%s)
             ORDER BY nome_completo
-        """)
+        """, (usuarios_permitidos,))
         funcionarios = cursor.fetchall()
         
-        # Grupos de clientes
+        # Grupos de clientes (mantém todos)
         cursor.execute("""
             SELECT DISTINCT cod_grupo_cliente, des_grupo 
             FROM apontador_horas.clientes 
@@ -865,13 +1327,15 @@ def filtros_relatorio():
         """)
         grupos_clientes = cursor.fetchall()
         
-        # Grupos de tarefas
+        # Grupos de tarefas (mantém todos)
         cursor.execute("""
             SELECT cod_grupo_tarefa, nome_grupo_tarefa 
             FROM apontador_horas.grupo_tarefas 
             ORDER BY cod_grupo_tarefa
         """)
         grupos_tarefas = cursor.fetchall()
+        
+        print(f"🔍 Filtros carregados: {usuario_logado} ({nivel_logado}) - {len(funcionarios)} funcionários disponíveis")
         
         return jsonify({
             'success': True,

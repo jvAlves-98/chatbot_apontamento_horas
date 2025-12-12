@@ -15,6 +15,9 @@
                 <button class="header-tab-btn active" data-page="apontamento">
                     📋 Apontamento
                 </button>
+                <button class="header-tab-btn" data-page="dashboard">
+                    📈 Dashboard
+                </button>
                 <button class="header-tab-btn" data-page="relatorios">
                     📊 Relatórios
                 </button>
@@ -187,7 +190,83 @@
     </div>
     </div> <!-- Fecha page-apontamento -->
 
-    <!-- PÁGINA 2: RELATÓRIOS -->
+    <!-- PÁGINA 2: DASHBOARD -->
+    <div class="page-content" id="page-dashboard">
+        <div class="dashboard-container">
+            <!-- Filtro de Data -->
+            <div class="filtros-card">
+                <h3>🔍 Filtro de Período</h3>
+                <div class="filtros-grid">
+                    <div class="form-group">
+                        <label>📅 Ano</label>
+                        <select id="dashAno"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>📆 Mês</label>
+                        <select id="dashMes">
+                            <option value="">Todos</option>
+                            <option value="1">Janeiro</option>
+                            <option value="2">Fevereiro</option>
+                            <option value="3">Março</option>
+                            <option value="4">Abril</option>
+                            <option value="5">Maio</option>
+                            <option value="6">Junho</option>
+                            <option value="7">Julho</option>
+                            <option value="8">Agosto</option>
+                            <option value="9">Setembro</option>
+                            <option value="10">Outubro</option>
+                            <option value="11">Novembro</option>
+                            <option value="12">Dezembro</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="filtros-actions">
+                    <button id="btnAtualizarDash" class="btn-primary">
+                        🔄 Atualizar Dashboard
+                    </button>
+                </div>
+            </div>
+
+            <!-- Cards de Resumo -->
+            <div class="stats-grid">
+                <div class="stat-card stat-primary">
+                    <h3>Total de Tarefas</h3>
+                    <div class="stat-value" id="totalTarefas">0</div>
+                </div>
+                <div class="stat-card stat-success">
+                    <h3>Tarefas Concluídas</h3>
+                    <div class="stat-value" id="tarefasConcluidas">0</div>
+                </div>
+                <div class="stat-card stat-danger">
+                    <h3>Tarefas Não Concluídas</h3>
+                    <div class="stat-value" id="tarefasNaoConcluidas">0</div>
+                </div>
+            </div>
+
+            <!-- Gráficos -->
+            <div class="charts-grid">
+                <!-- Gráfico: Tarefas por Departamento -->
+                <div class="chart-card">
+                    <h3>📊 Quantidade de Tarefas por Departamento</h3>
+                    <canvas id="chartDepartamentos"></canvas>
+                </div>
+
+                <!-- Gráfico: Tarefas por Grupo de Atividades -->
+                <div class="chart-card">
+                    <h3>📊 Quantidade de Tarefas por Grupo de Atividades</h3>
+                    <canvas id="chartGrupoAtividades"></canvas>
+                </div>
+            </div>
+
+            <!-- Gráfico de Linha: Tempo Mensal -->
+            <div class="chart-card-full">
+                <h3>📈 Linha do Tempo Mensal de Tarefas</h3>
+                <canvas id="chartTempoMensal"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- PÁGINA 3: RELATÓRIOS -->
     <div class="page-content" id="page-relatorios">
         <div class="relatorios-container">
             <!-- Filtros -->
@@ -245,6 +324,9 @@
                     <button id="btnAplicarFiltros" class="btn-primary">
                         🔍 Aplicar Filtros
                     </button>
+                    <button id="btnExportarExcel" class="btn-success" style="display: none;">
+                        📥 Exportar Excel
+                    </button>
                     <button id="btnLimparFiltros" class="btn-secondary">
                         🔄 Limpar
                     </button>
@@ -274,7 +356,9 @@
         </div>
     </div>
     
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="/static/js/chat.js"></script>
     <script src="/static/js/relatorios.js"></script>
+    <script src="/static/js/dashboard.js"></script>
 </body>
 </html>

@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Event listeners dos filtros
     const btnAplicar = document.getElementById('btnAplicarFiltros');
     const btnLimpar = document.getElementById('btnLimparFiltros');
+    const btnExportar = document.getElementById('btnExportarExcel');
     
     if (btnAplicar) {
         btnAplicar.addEventListener('click', gerarRelatorio);
@@ -36,6 +37,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (btnLimpar) {
         btnLimpar.addEventListener('click', limparFiltros);
+    }
+    
+    if (btnExportar) {
+        btnExportar.addEventListener('click', exportarExcel);
     }
 });
 
@@ -142,6 +147,14 @@ async function gerarRelatorio() {
         
         if (data.success) {
             renderizarRelatorio(data.dados);
+            
+            // Mostrar botão de exportar se houver dados
+            const btnExportar = document.getElementById('btnExportarExcel');
+            if (Object.keys(data.dados).length > 0) {
+                btnExportar.style.display = 'inline-block';
+            } else {
+                btnExportar.style.display = 'none';
+            }
         } else {
             alert('Erro ao gerar relatório: ' + data.message);
         }
@@ -170,7 +183,7 @@ function renderizarRelatorio(dados) {
         tbody.innerHTML = `
             <tr>
                 <td colspan="100" class="no-data">
-                    📭 Nenhum dado encontrado para os filtros selecionados
+                    🔭 Nenhum dado encontrado para os filtros selecionados
                 </td>
             </tr>
         `;
@@ -419,4 +432,63 @@ function limparFiltros() {
             </td>
         </tr>
     `;
+    
+    // Esconder botão de exportar
+    document.getElementById('btnExportarExcel').style.display = 'none';
+}
+
+// ========================================
+// EXPORTAR RELATÓRIO PARA EXCEL
+// ========================================
+
+async function exportarExcel() {
+    const btnExportar = document.getElementById('btnExportarExcel');
+    btnExportar.disabled = true;
+    btnExportar.textContent = '⏳ Exportando...';
+    
+    try {
+        const filtros = {
+            ano: document.getElementById('filtroAno').value,
+            mes: document.getElementById('filtroMes').value,
+            departamento: document.getElementById('filtroDepartamento').value,
+            funcionario: document.getElementById('filtroFuncionario').value,
+            grupo: document.getElementById('filtroGrupo').value,
+            tarefa: document.getElementById('filtroTarefa').value
+        };
+        
+        const response = await fetch('/api/exportar-relatorio-excel', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(filtros)
+        });
+        
+        if (response.ok) {
+            // Baixar arquivo
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `relatorio_horas_${new Date().getTime()}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            // Feedback visual
+            btnExportar.textContent = '✅ Exportado!';
+            setTimeout(() => {
+                btnExportar.textContent = '📥 Exportar Excel';
+            }, 2000);
+        } else {
+            const data = await response.json();
+            alert('Erro ao exportar: ' + (data.message || 'Erro desconhecido'));
+        }
+    } catch (error) {
+        console.error('Erro ao exportar Excel:', error);
+        alert('Erro ao exportar Excel. Tente novamente.');
+    } finally {
+        btnExportar.disabled = false;
+    }
 }
