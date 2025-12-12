@@ -75,6 +75,20 @@
                                 <option value="">Selecione um cliente primeiro</option>
                             </select>
                         </div>
+                        
+                        <div class="form-group">
+                            <label for="taskObservacao">💬 Observação:</label>
+                            <textarea
+                                id="taskObservacao"
+                                placeholder="Digite observações sobre a tarefa..."
+                                rows="3"
+                                maxlength="1000"
+                            ></textarea>
+                            <small class="char-counter">
+                                <span id="taskObsCounter">0</span>/1000 caracteres
+                            </small>
+
+                        </div>
 
                         <button type="submit" class="btn-start" id="btnStartTask" disabled>
                             🚀 Iniciar Tarefa
@@ -127,6 +141,19 @@
                                     required
                                 >
                             </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="lateObservacao">💬 Observação:</label>
+                            <textarea 
+                                id="lateObservacao" 
+                                placeholder="Digite observações sobre este apontamento..."
+                                rows="3"
+                                maxlength="1000"
+                            ></textarea>
+                            <small class="char-counter">
+                                <span id="lateObsCounter">0</span>/1000 caracteres
+                            </small>
                         </div>
 
                         <button type="submit" class="btn-start btn-late" id="btnRegisterLate" disabled>

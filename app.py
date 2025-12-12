@@ -323,6 +323,7 @@ def iniciar_tarefa():
     nome_cliente = dados.get('nome_cliente')
     tarefa_id = dados.get('tarefa_id')
     nome_tarefa = dados.get('nome_tarefa')
+    observacao = dados.get('observacao', '')  # ⭐ NOVO: Campo observação (opcional)
     usuario = session.get('usuario')
     
     if not all([cnpj_cliente, tarefa_id]):
@@ -353,24 +354,26 @@ def iniciar_tarefa():
                 cliente_id,
                 tarefa_id,
                 data_inicio,
-                status
+                status,
+                observacao  -- ⭐ NOVO: Campo observação
             )
             SELECT 
                 funcionario_id,
                 cliente_id,
                 %s,
                 NOW(),
-                'em_andamento'
+                'em_andamento',
+                %s  -- ⭐ NOVO: Parâmetro observação
             FROM ids_resolvidos
             RETURNING 
                 id,
                 TO_CHAR(data_inicio AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD HH24:MI:SS') AS data_inicio_br
-        """, (usuario, cnpj_cliente, tarefa_id))
+        """, (usuario, cnpj_cliente, tarefa_id, observacao))  # ⭐ NOVO: Adicionar observacao nos parâmetros
         
         resultado = cursor.fetchone()
         conn.commit()
         
-        print(f"✅ Tarefa iniciada: {usuario} | ID: {tarefa_id} | {nome_tarefa} | Cliente: {nome_cliente}")
+        print(f"✅ Tarefa iniciada: {usuario} | ID: {tarefa_id} | {nome_tarefa} | Cliente: {nome_cliente} | Obs: {observacao[:50] if observacao else 'N/A'}")
         
         return jsonify({
             'success': True,
@@ -590,7 +593,7 @@ def finalizar_tarefa():
 
 @app.route('/api/registrar-atrasado', methods=['POST'])
 def registrar_atrasado():
-    """Registra um apontamento atrasado com período específico"""
+    """Registra apontamento de horas atrasado (com data/hora passadas)"""
     if 'usuario' not in session:
         return jsonify({'success': False, 'message': 'Não autenticado'}), 401
     
@@ -599,11 +602,12 @@ def registrar_atrasado():
     nome_cliente = dados.get('nome_cliente')
     tarefa_id = dados.get('tarefa_id')
     nome_tarefa = dados.get('nome_tarefa')
-    data_inicio_str = dados.get('data_inicio')
-    data_fim_str = dados.get('data_fim')
+    data_inicio = dados.get('data_inicio')
+    data_fim = dados.get('data_fim')
+    observacao = dados.get('observacao', '')  # ⭐ NOVO: Campo observação (opcional)
     usuario = session.get('usuario')
     
-    if not all([cnpj_cliente, tarefa_id, data_inicio_str, data_fim_str]):
+    if not all([cnpj_cliente, tarefa_id, data_inicio, data_fim]):
         return jsonify({'success': False, 'message': 'Dados incompletos'}), 400
     
     conn = get_db_connection()
@@ -613,19 +617,22 @@ def registrar_atrasado():
     try:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
-        # Converter strings de data para datetime
+        # Validar e converter datas
         from datetime import datetime
-        data_inicio = datetime.fromisoformat(data_inicio_str.replace('Z', '+00:00'))
-        data_fim = datetime.fromisoformat(data_fim_str.replace('Z', '+00:00'))
+        try:
+            dt_inicio = datetime.fromisoformat(data_inicio.replace('Z', '+00:00'))
+            dt_fim = datetime.fromisoformat(data_fim.replace('Z', '+00:00'))
+            
+            if dt_fim <= dt_inicio:
+                return jsonify({'success': False, 'message': 'Data fim deve ser posterior à data início'}), 400
+            
+            # Converter para string no formato adequado para PostgreSQL
+            data_inicio_str = dt_inicio.strftime('%Y-%m-%d %H:%M:%S')
+            data_fim_str = dt_fim.strftime('%Y-%m-%d %H:%M:%S')
+            
+        except ValueError as e:
+            return jsonify({'success': False, 'message': f'Formato de data inválido: {e}'}), 400
         
-        # Validar datas
-        if data_fim <= data_inicio:
-            return jsonify({'success': False, 'message': 'Data de fim deve ser posterior à data de início'}), 400
-        
-        if data_inicio > datetime.now() or data_fim > datetime.now():
-            return jsonify({'success': False, 'message': 'Não é possível registrar apontamento no futuro'}), 400
-        
-        # Inserir apontamento já finalizado
         cursor.execute("""
             WITH ids_resolvidos AS (
                 SELECT 
@@ -645,7 +652,8 @@ def registrar_atrasado():
                 data_fim,
                 status,
                 criado_em,
-                atualizado_em
+                atualizado_em,
+                observacao  -- ⭐ NOVO: Campo observação
             )
             SELECT 
                 funcionario_id,
@@ -655,19 +663,20 @@ def registrar_atrasado():
                 %s AT TIME ZONE 'America/Sao_Paulo',
                 'finalizado',
                 NOW(),
-                NOW()
+                NOW(),
+                %s  -- ⭐ NOVO: Parâmetro observação
             FROM ids_resolvidos
             RETURNING 
                 id,
                 EXTRACT(EPOCH FROM (data_fim - data_inicio))/3600 AS horas_trabalhadas
-        """, (usuario, cnpj_cliente, tarefa_id, data_inicio_str, data_fim_str))
+        """, (usuario, cnpj_cliente, tarefa_id, data_inicio_str, data_fim_str, observacao))  # ⭐ NOVO: Adicionar observacao
         
         resultado = cursor.fetchone()
         conn.commit()
         
         horas = round(resultado['horas_trabalhadas'], 2)
         
-        print(f"✅ Apontamento atrasado registrado: {usuario} | Tarefa ID: {tarefa_id} | {nome_tarefa} | {horas}h | {data_inicio_str} até {data_fim_str}")
+        print(f"✅ Apontamento atrasado registrado: {usuario} | Tarefa ID: {tarefa_id} | {nome_tarefa} | {horas}h | {data_inicio_str} até {data_fim_str} | Obs: {observacao[:50] if observacao else 'N/A'}")
         
         return jsonify({
             'success': True,

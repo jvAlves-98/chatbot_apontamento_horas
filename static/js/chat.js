@@ -24,6 +24,10 @@ const selectedClientText = document.getElementById('selectedClientText');
 const clearClientBtn = document.getElementById('clearClient');
 const taskSelect = document.getElementById('taskSelect');
 const btnStartTask = document.getElementById('btnStartTask');
+const taskObservacao = document.getElementById('taskObservacao');
+const taskObsCounter = document.getElementById('taskObsCounter');
+const lateObservacao = document.getElementById('lateObservacao');
+const lateObsCounter = document.getElementById('lateObsCounter');
 
 // Container de tarefas
 const tasksContainer = document.getElementById('tasksContainer');
@@ -32,6 +36,35 @@ const noTasksMessage = document.getElementById('noTasksMessage');
 // ========================================
 // FUNÇÕES DE CHAT
 // ========================================
+
+// Função para atualizar contador de caracteres
+function atualizarContador(textarea, counter) {
+    const length = textarea.value.length;
+    const maxLength = textarea.getAttribute('maxlength') || 1000;
+    counter.textContent = length;
+    
+    // Adicionar classe de aviso quando próximo do limite
+    const counterContainer = counter.parentElement;
+    if (length >= maxLength * 0.9) {
+        counterContainer.classList.add('limit-reached');
+    } else {
+        counterContainer.classList.remove('limit-reached');
+    }
+}
+
+// Event listeners para contadores
+if (taskObservacao && taskObsCounter) {
+    taskObservacao.addEventListener('input', () => {
+        atualizarContador(taskObservacao, taskObsCounter);
+    });
+}
+
+if (lateObservacao && lateObsCounter) {
+    lateObservacao.addEventListener('input', () => {
+        atualizarContador(lateObservacao, lateObsCounter);
+    });
+}
+
 function processarFormatacao(texto) {
     let textoSeguro = texto
         .replace(/&/g, '&amp;')
@@ -336,10 +369,11 @@ taskForm.addEventListener('submit', async (e) => {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                cnpj_cliente: selectedClientCNPJ.value,
-                nome_cliente: selectedClientName.value,
-                tarefa_id: tarefaData.id,
-                nome_tarefa: tarefaData.nome_tarefa
+            cnpj_cliente: selectedClientCNPJ.value,
+            nome_cliente: selectedClientName.value,
+            tarefa_id: tarefaData.id,
+            nome_tarefa: tarefaData.nome_tarefa,
+            observacao: taskObservacao ? taskObservacao.value.trim() : ''
             })
         });
         
@@ -369,6 +403,15 @@ taskForm.addEventListener('submit', async (e) => {
             adicionarMensagem(`Tarefa iniciada: ${tarefaData.nome_tarefa} para ${selectedClientName.value}`, 'bot');
             
             clearClientBtn.click();
+
+            // Limpar campo de observação
+            if (taskObservacao) {
+                taskObservacao.value = '';
+                if (taskObsCounter) {
+                    taskObsCounter.textContent = '0';
+                }
+            }
+
         } else {
             adicionarMensagem('Erro ao iniciar tarefa: ' + data.message, 'bot');
         }
@@ -557,9 +600,6 @@ window.finalizarTarefa = async function(taskId) {
     }
     
     console.log('✅ Tarefa encontrada:', task);
-    
-    const confirmar = confirm(`Finalizar tarefa "${task.tarefa}"?`);
-    if (!confirmar) return;
     
     console.log('📤 Enviando para backend - apontamento_id:', taskId);
     
@@ -918,12 +958,13 @@ lateTaskForm.addEventListener('submit', async (e) => {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                cnpj_cliente: lateSelectedClientCNPJ.value,
-                nome_cliente: lateSelectedClientName.value,
-                tarefa_id: tarefaData.id,
-                nome_tarefa: tarefaData.nome_tarefa,
-                data_inicio: lateStartDateTime.value,
-                data_fim: lateEndDateTime.value
+            cnpj_cliente: lateSelectedClientCNPJ.value,
+            nome_cliente: lateSelectedClientName.value,
+            tarefa_id: tarefaData.id,
+            nome_tarefa: tarefaData.nome_tarefa,
+            data_inicio: lateStartDateTime.value,
+            data_fim: lateEndDateTime.value,
+            observacao: lateObservacao ? lateObservacao.value.trim() : ''  // ⭐ NOVO
             })
         });
         
@@ -941,6 +982,14 @@ lateTaskForm.addEventListener('submit', async (e) => {
             lateClearClientBtn.click();
             lateStartDateTime.value = '';
             lateEndDateTime.value = '';
+            // Limpar campo de observação
+            if (lateObservacao) {
+                lateObservacao.value = '';
+                if (lateObsCounter) {
+                    lateObsCounter.textContent = '0';
+                }
+            }
+
             verificarFormLateCompleto();
         } else {
             adicionarMensagem('Erro ao registrar apontamento: ' + data.message, 'bot');
