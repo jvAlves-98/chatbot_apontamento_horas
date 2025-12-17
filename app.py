@@ -8,6 +8,8 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 import uuid
+from threading import Thread
+import time
 
 # Carregar variáveis de ambiente
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -31,6 +33,9 @@ DB_CONFIG = {
 # URL do webhook do n8n
 N8N_WEBHOOK_URL = "https://n8n.bookerbrasil.com/webhook/9d8f9a85-c21d-4aed-bd52-124af0d116c3/chat"
 
+# Sistema de alertas - POR USUÁRIO
+alertas_por_usuario = {}  # {usuario: [alertas]}
+
 def get_db_connection():
     """Cria uma conexão com o banco de dados PostgreSQL"""
     try:
@@ -43,6 +48,121 @@ def get_db_connection():
 def hash_senha(senha):
     """Gera hash SHA-256 da senha"""
     return hashlib.sha256(senha.encode()).hexdigest()
+
+def contar_tarefas_ativas_por_usuario():
+    """Verifica tarefas ativas por usuário e retorna dicionário {usuario: quantidade}"""
+    conn = get_db_connection()
+    if not conn:
+        return None
+    
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("""
+            SELECT 
+                usuario,
+                COUNT(*) as total
+            FROM apontador_horas.v_tarefas_ativas 
+            WHERE status = 'em_andamento'
+            GROUP BY usuario
+        """)
+        resultados = cursor.fetchall()
+        
+        # Converter para dicionário {usuario: total}
+        tarefas_por_usuario = {}
+        for row in resultados:
+            tarefas_por_usuario[row['usuario']] = row['total']
+        
+        return tarefas_por_usuario
+    except Exception as e:
+        print(f"❌ Erro ao verificar tarefas ativas: {e}")
+        return None
+    finally:
+        conn.close()
+
+def adicionar_alerta_usuario(usuario, mensagem):
+    """Adiciona um alerta para um usuário específico com timestamp de expiração"""
+    global alertas_por_usuario
+    
+    timestamp = datetime.now().strftime('%H:%M:%S')
+    alerta = {
+        'id': str(uuid.uuid4()),
+        'mensagem': mensagem,
+        'timestamp': timestamp,
+        'hora': datetime.now().strftime('%H:%M'),
+        'criado_em': datetime.now()  # Timestamp completo para verificar expiração
+    }
+    
+    # Inicializar lista de alertas do usuário se não existir
+    if usuario not in alertas_por_usuario:
+        alertas_por_usuario[usuario] = []
+    
+    alertas_por_usuario[usuario].append(alerta)
+    print(f"⚠️ ALERTA para {usuario}: {mensagem} às {timestamp}")
+
+def limpar_alertas_expirados():
+    """Remove alertas com mais de 2 horas"""
+    global alertas_por_usuario
+    agora = datetime.now()
+    tempo_expiracao = timedelta(hours=2)
+    
+    usuarios_para_limpar = []
+    
+    for usuario, alertas in alertas_por_usuario.items():
+        # Filtrar alertas não expirados
+        alertas_validos = [
+            alerta for alerta in alertas
+            if (agora - alerta['criado_em']) < tempo_expiracao
+        ]
+        
+        if len(alertas_validos) < len(alertas):
+            removidos = len(alertas) - len(alertas_validos)
+            print(f"🗑️ Removidos {removidos} alerta(s) expirado(s) de {usuario}")
+        
+        if len(alertas_validos) > 0:
+            alertas_por_usuario[usuario] = alertas_validos
+        else:
+            usuarios_para_limpar.append(usuario)
+    
+    # Remover usuários sem alertas
+    for usuario in usuarios_para_limpar:
+        del alertas_por_usuario[usuario]
+
+def scheduler_verificacao_tarefas():
+    """Thread que verifica tarefas ativas às 17:00 e 18:00 - POR USUÁRIO"""
+    print("🕒 Scheduler de verificação de tarefas iniciado (por usuário)")
+    
+    ultimo_horario_executado = None  # Rastrear último horário que executou
+    
+    while True:
+        now = datetime.now()
+        hora_atual = now.strftime('%H:%M')
+        
+        # Verificar se é um horário agendado E se ainda não executou neste horário
+        if hora_atual in ['17:00', '18:00'] and hora_atual != ultimo_horario_executado:
+            print(f"🔔 Executando verificação de tarefas às {hora_atual}")
+            
+            tarefas_por_usuario = contar_tarefas_ativas_por_usuario()
+            
+            if tarefas_por_usuario is not None:
+                if len(tarefas_por_usuario) == 0:
+                    # Ninguém tem tarefas ativas
+                    print(f"✅ Nenhum usuário com tarefas em andamento às {hora_atual}")
+                else:
+                    # Criar alerta individual para cada usuário com tarefas ativas
+                    for usuario, total in tarefas_por_usuario.items():
+                        mensagem = f"⚠️ Atenção! Você tem {total} tarefa(s) em andamento às {hora_atual}"
+                        adicionar_alerta_usuario(usuario, mensagem)
+                    
+                    print(f"✅ {len(tarefas_por_usuario)} usuário(s) notificado(s) às {hora_atual}")
+            else:
+                print(f"❌ Erro ao verificar tarefas às {hora_atual}")
+            
+            # Marcar este horário como executado
+            ultimo_horario_executado = hora_atual
+            print(f"✅ Verificação concluída. Próxima verificação será em outro horário.")
+        
+        # Verificar a cada 30 segundos
+        time.sleep(30)
 
 def verificar_usuario(usuario, senha):
     """Verifica se usuário e senha estão corretos no banco de dados"""
@@ -204,13 +324,78 @@ def usuario_info():
         'departamento': session.get('departamento')
     })
 
+@app.route('/api/alertas', methods=['GET'])
+def obter_alertas():
+    """Retorna alertas do usuário logado (remove expirados automaticamente)"""
+    if 'usuario' not in session:
+        return jsonify({'success': False, 'message': 'Não autenticado'}), 401
+    
+    usuario = session.get('usuario')
+    global alertas_por_usuario
+    
+    # Limpar alertas expirados de todos os usuários
+    limpar_alertas_expirados()
+    
+    # Retornar apenas alertas deste usuário
+    alertas_usuario = alertas_por_usuario.get(usuario, [])
+    
+    # Remover campo criado_em antes de enviar (não é necessário no frontend)
+    alertas_para_enviar = []
+    for alerta in alertas_usuario:
+        alerta_limpo = {
+            'id': alerta['id'],
+            'mensagem': alerta['mensagem'],
+            'timestamp': alerta['timestamp'],
+            'hora': alerta['hora']
+        }
+        alertas_para_enviar.append(alerta_limpo)
+    
+    return jsonify({
+        'success': True,
+        'alertas': alertas_para_enviar
+    })
+
+@app.route('/api/alertas/limpar', methods=['POST'])
+def limpar_alertas():
+    """Limpa alertas do usuário logado"""
+    if 'usuario' not in session:
+        return jsonify({'success': False, 'message': 'Não autenticado'}), 401
+    
+    usuario = session.get('usuario')
+    global alertas_por_usuario
+    
+    # Limpar apenas alertas deste usuário
+    if usuario in alertas_por_usuario:
+        alertas_por_usuario[usuario] = []
+    
+    return jsonify({'success': True})
+
+@app.route('/api/alertas/visualizar/<alerta_id>', methods=['POST'])
+def marcar_visualizado(alerta_id):
+    """Marca um alerta específico como visualizado (remove da lista)"""
+    if 'usuario' not in session:
+        return jsonify({'success': False, 'message': 'Não autenticado'}), 401
+    
+    usuario = session.get('usuario')
+    global alertas_por_usuario
+    
+    if usuario in alertas_por_usuario:
+        # Remover alerta com este ID
+        alertas_por_usuario[usuario] = [
+            alerta for alerta in alertas_por_usuario[usuario]
+            if alerta['id'] != alerta_id
+        ]
+        print(f"✅ Alerta {alerta_id} marcado como visualizado por {usuario}")
+    
+    return jsonify({'success': True})
+
 # ========================================
 # ROTAS DE BUSCA
 # ========================================
 
 @app.route('/api/buscar-clientes', methods=['POST'])
 def buscar_clientes():
-    """Busca clientes por nome"""
+    """Busca clientes por nome ou CNPJ (formatado ou somente números)"""
     if 'usuario' not in session:
         return jsonify({'success': False, 'message': 'Não autenticado'}), 401
     
@@ -227,20 +412,25 @@ def buscar_clientes():
     try:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
+        # Remove formatação do CNPJ/CPF para busca (pontos, barras, hífens)
+        query_numeros = ''.join(filter(str.isdigit, query))
+        
         cursor.execute("""
             SELECT num_cnpj_cpf, nom_cliente, cod_grupo_cliente, des_grupo
             FROM clientes
             WHERE LOWER(nom_cliente) LIKE LOWER(%s)
                OR LOWER(des_grupo) LIKE LOWER(%s)
+               OR REPLACE(REPLACE(REPLACE(REPLACE(num_cnpj_cpf, '.', ''), '/', ''), '-', ''), ' ', '') LIKE %s
             ORDER BY 
                 CASE 
                     WHEN LOWER(nom_cliente) = LOWER(%s) THEN 1
                     WHEN LOWER(nom_cliente) LIKE LOWER(%s) THEN 2
+                    WHEN REPLACE(REPLACE(REPLACE(REPLACE(num_cnpj_cpf, '.', ''), '/', ''), '-', ''), ' ', '') = %s THEN 1
                     ELSE 3
                 END,
                 nom_cliente
             LIMIT 10
-        """, (f'%{query}%', f'%{query}%', query, f'{query}%'))
+        """, (f'%{query}%', f'%{query}%', f'%{query_numeros}%', query, f'{query}%', query_numeros))
         
         clientes = cursor.fetchall()
         
@@ -257,16 +447,13 @@ def buscar_clientes():
 
 @app.route('/api/buscar-tarefas', methods=['POST'])
 def buscar_tarefas():
-    """Busca tarefas de um cliente para o usuário logado"""
+    """Busca tarefas para o usuário logado - opcionalmente filtrado por cliente"""
     if 'usuario' not in session:
         return jsonify({'success': False, 'message': 'Não autenticado'}), 401
     
     dados = request.get_json()
     cnpj = dados.get('cnpj', '').strip()
     usuario = session.get('usuario')
-    
-    if not cnpj:
-        return jsonify({'success': False, 'message': 'CNPJ não fornecido'}), 400
     
     conn = get_db_connection()
     if not conn:
@@ -275,25 +462,56 @@ def buscar_tarefas():
     try:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
-        cursor.execute("""
-            SELECT 
-                id,
-                nome_tarefa,
-                cod_grupo_tarefa,
-                prioridade,
-                estimativa_horas
-            FROM tarefas_colaborador
-            WHERE cnpj_cpf = %s
-              AND (colaborador_1 = %s OR colaborador_2 = %s)
-            ORDER BY 
-                CASE 
-                    WHEN LOWER(prioridade) LIKE '%%alta%%' OR LOWER(prioridade) LIKE '%%p2%%' THEN 1
-                    WHEN LOWER(prioridade) LIKE '%%média%%' OR LOWER(prioridade) LIKE '%%media%%' OR LOWER(prioridade) LIKE '%%p1%%' THEN 2
-                    WHEN LOWER(prioridade) LIKE '%%baixa%%' OR LOWER(prioridade) LIKE '%%p3%%' THEN 3
-                    ELSE 4
-                END,
-                nome_tarefa
-        """, (cnpj, usuario, usuario))
+        # Se CNPJ foi fornecido, busca apenas tarefas daquele cliente
+        if cnpj:
+            cursor.execute("""
+                SELECT 
+                    t.id,
+                    t.nome_tarefa,
+                    t.cod_grupo_tarefa,
+                    t.prioridade,
+                    t.estimativa_horas,
+                    t.cnpj_cpf,
+                    c.nom_cliente,
+                    c.des_grupo
+                FROM tarefas_colaborador t
+                LEFT JOIN clientes c ON t.cnpj_cpf = c.num_cnpj_cpf
+                WHERE t.cnpj_cpf = %s
+                  AND (t.colaborador_1 = %s OR t.colaborador_2 = %s)
+                ORDER BY 
+                    CASE 
+                        WHEN LOWER(t.prioridade) LIKE '%%alta%%' OR LOWER(t.prioridade) LIKE '%%p2%%' THEN 1
+                        WHEN LOWER(t.prioridade) LIKE '%%média%%' OR LOWER(t.prioridade) LIKE '%%media%%' OR LOWER(t.prioridade) LIKE '%%p1%%' THEN 2
+                        WHEN LOWER(t.prioridade) LIKE '%%baixa%%' OR LOWER(t.prioridade) LIKE '%%p3%%' THEN 3
+                        ELSE 4
+                    END,
+                    t.nome_tarefa
+            """, (cnpj, usuario, usuario))
+        else:
+            # Se CNPJ não foi fornecido, busca todas as tarefas do usuário
+            cursor.execute("""
+                SELECT 
+                    t.id,
+                    t.nome_tarefa,
+                    t.cod_grupo_tarefa,
+                    t.prioridade,
+                    t.estimativa_horas,
+                    t.cnpj_cpf,
+                    c.nom_cliente,
+                    c.des_grupo
+                FROM tarefas_colaborador t
+                LEFT JOIN clientes c ON t.cnpj_cpf = c.num_cnpj_cpf
+                WHERE (t.colaborador_1 = %s OR t.colaborador_2 = %s)
+                ORDER BY 
+                    CASE 
+                        WHEN LOWER(t.prioridade) LIKE '%%alta%%' OR LOWER(t.prioridade) LIKE '%%p2%%' THEN 1
+                        WHEN LOWER(t.prioridade) LIKE '%%média%%' OR LOWER(t.prioridade) LIKE '%%media%%' OR LOWER(t.prioridade) LIKE '%%p1%%' THEN 2
+                        WHEN LOWER(t.prioridade) LIKE '%%baixa%%' OR LOWER(t.prioridade) LIKE '%%p3%%' THEN 3
+                        ELSE 4
+                    END,
+                    c.nom_cliente,
+                    t.nome_tarefa
+            """, (usuario, usuario))
         
         tarefas = cursor.fetchall()
         
@@ -1449,5 +1667,10 @@ if __name__ == '__main__':
         conn.close()
     else:
         print("⚠️ AVISO: Não foi possível conectar ao banco de dados!")
+    
+    # Iniciar scheduler de verificação de tarefas em thread separada
+    scheduler_thread = Thread(target=scheduler_verificacao_tarefas, daemon=True)
+    scheduler_thread.start()
+    print("✅ Scheduler de verificação de tarefas iniciado (17:00 e 18:00)")
     
     app.run(debug=True, host='0.0.0.0', port=5000)

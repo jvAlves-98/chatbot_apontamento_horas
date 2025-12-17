@@ -25,6 +25,7 @@
         </div>
         <div class="user-info">
             <span id="nomeUsuario">{{ usuario }}</span>
+            <button id="btnTestarSom" class="btn-testar-som" onclick="testarSomManual()" title="Testar som de alerta">🔔</button>
             <button id="btnLogout" class="btn-logout">Sair</button>
         </div>
     </div>
@@ -387,5 +388,382 @@
     <script src="/static/js/chat.js"></script>
     <script src="/static/js/relatorios.js"></script>
     <script src="/static/js/dashboard.js"></script>
+    
+    <!-- SISTEMA DE ALERTAS -->
+    <script>
+        // Sistema de Alertas - Booker Time Tracking
+        let alertaInterval = null;
+        let alertasJaMostrados = new Set(); // Rastrear alertas já exibidos
+
+        // Função para tocar som de notificação
+        function tocarSomAlerta(tipoAlerta) {
+            try {
+                console.log('🔊 Tentando tocar som:', tipoAlerta);
+                
+                // Criar contexto de áudio
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Verificar se AudioContext foi criado
+                if (!audioContext) {
+                    console.error('❌ AudioContext não suportado');
+                    return;
+                }
+                
+                console.log('✅ AudioContext criado. Estado:', audioContext.state);
+                
+                // Se o contexto estiver suspenso, tentar retomar
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume().then(() => {
+                        console.log('✅ AudioContext retomado');
+                        executarSom(audioContext, tipoAlerta);
+                    }).catch(err => {
+                        console.error('❌ Erro ao retomar AudioContext:', err);
+                    });
+                } else {
+                    executarSom(audioContext, tipoAlerta);
+                }
+                
+            } catch (error) {
+                console.error('❌ Erro ao tocar som:', error);
+            }
+        }
+        
+        function executarSom(audioContext, tipoAlerta) {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            // Configurar som baseado no tipo de alerta
+            if (tipoAlerta === 'sucesso') {
+                // Som agradável para sucesso (2 beeps curtos)
+                oscillator.frequency.value = 800;
+                gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.15);
+                
+                console.log('🎵 Tocando som de SUCESSO');
+                
+                // Segundo beep
+                setTimeout(() => {
+                    const osc2 = audioContext.createOscillator();
+                    const gain2 = audioContext.createGain();
+                    osc2.connect(gain2);
+                    gain2.connect(audioContext.destination);
+                    osc2.frequency.value = 1000;
+                    gain2.gain.setValueAtTime(0.5, audioContext.currentTime);
+                    gain2.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
+                    osc2.start(audioContext.currentTime);
+                    osc2.stop(audioContext.currentTime + 0.15);
+                }, 200);
+                
+            } else if (tipoAlerta === 'erro') {
+                // Som de alerta para erro (beep longo grave)
+                oscillator.frequency.value = 300;
+                gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.4);
+                
+                console.log('🎵 Tocando som de ERRO');
+                
+            } else {
+                // Som de atenção para alertas normais (3 beeps rápidos)
+                oscillator.frequency.value = 600;
+                gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.12);
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.12);
+                
+                console.log('🎵 Tocando som de ALERTA');
+                
+                // Segundo beep
+                setTimeout(() => {
+                    const osc2 = audioContext.createOscillator();
+                    const gain2 = audioContext.createGain();
+                    osc2.connect(gain2);
+                    gain2.connect(audioContext.destination);
+                    osc2.frequency.value = 600;
+                    gain2.gain.setValueAtTime(0.5, audioContext.currentTime);
+                    gain2.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.12);
+                    osc2.start(audioContext.currentTime);
+                    osc2.stop(audioContext.currentTime + 0.12);
+                }, 180);
+                
+                // Terceiro beep
+                setTimeout(() => {
+                    const osc3 = audioContext.createOscillator();
+                    const gain3 = audioContext.createGain();
+                    osc3.connect(gain3);
+                    gain3.connect(audioContext.destination);
+                    osc3.frequency.value = 600;
+                    gain3.gain.setValueAtTime(0.5, audioContext.currentTime);
+                    gain3.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.12);
+                    osc3.start(audioContext.currentTime);
+                    osc3.stop(audioContext.currentTime + 0.12);
+                }, 360);
+            }
+        }
+
+        // Adicionar estilos CSS para alertas
+        const alertaStyles = document.createElement('style');
+        alertaStyles.textContent = `
+            .btn-testar-som {
+                background: #ffc107;
+                border: 2px solid #e0a800;
+                color: #333;
+                padding: 8px 12px;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 18px;
+                margin-right: 10px;
+                transition: all 0.3s;
+            }
+            
+            .btn-testar-som:hover {
+                background: #e0a800;
+                transform: scale(1.1);
+            }
+            
+            .btn-testar-som:active {
+                transform: scale(0.95);
+            }
+            
+            #alertas-container {
+                position: fixed;
+                top: 80px;
+                right: 20px;
+                z-index: 9999;
+                max-width: 400px;
+            }
+            
+            .alerta-item {
+                background: #fff3cd;
+                border: 2px solid #ffc107;
+                border-radius: 8px;
+                padding: 15px;
+                margin-bottom: 10px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                animation: slideIn 0.3s ease-out;
+            }
+            
+            .alerta-item.sucesso {
+                background: #d4edda;
+                border-color: #28a745;
+            }
+            
+            .alerta-item.erro {
+                background: #f8d7da;
+                border-color: #dc3545;
+            }
+            
+            .alerta-item:hover {
+                box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+            }
+            
+            .alerta-conteudo {
+                display: flex;
+                justify-content: space-between;
+                align-items: start;
+            }
+            
+            .alerta-texto {
+                flex: 1;
+            }
+            
+            .alerta-mensagem {
+                font-size: 14px;
+                font-weight: bold;
+                margin-bottom: 5px;
+                color: #333;
+            }
+            
+            .alerta-timestamp {
+                font-size: 12px;
+                color: #666;
+            }
+            
+            .alerta-fechar {
+                background: none;
+                border: none;
+                font-size: 20px;
+                cursor: pointer;
+                color: #666;
+                padding: 0 0 0 10px;
+                line-height: 1;
+                transition: color 0.2s;
+            }
+            
+            .alerta-fechar:hover {
+                color: #333;
+            }
+            
+            @keyframes slideIn {
+                from {
+                    transform: translateX(400px);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+            
+            @keyframes slideOut {
+                from {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+                to {
+                    transform: translateX(400px);
+                    opacity: 0;
+                }
+            }
+        `;
+        document.head.appendChild(alertaStyles);
+
+        // Iniciar monitoramento de alertas
+        function iniciarMonitoramentoAlertas() {
+            alertaInterval = setInterval(verificarAlertas, 30000);
+            verificarAlertas();
+            console.log('Sistema de alertas iniciado');
+        }
+
+        // Verificar alertas do servidor
+        async function verificarAlertas() {
+            try {
+                const response = await fetch('/api/alertas');
+                const data = await response.json();
+                
+                if (data.success && data.alertas && data.alertas.length > 0) {
+                    mostrarAlertas(data.alertas);
+                }
+            } catch (error) {
+                console.error('Erro ao verificar alertas:', error);
+            }
+        }
+
+        // Exibir alertas na tela
+        function mostrarAlertas(alertas) {
+            let container = document.getElementById('alertas-container');
+            
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'alertas-container';
+                document.body.appendChild(container);
+            }
+            
+            container.innerHTML = '';
+            
+            let temNovoAlerta = false;
+            let tipoDoNovoAlerta = 'normal';
+            
+            alertas.forEach(alerta => {
+                // Verificar se é um alerta novo
+                if (!alertasJaMostrados.has(alerta.id)) {
+                    temNovoAlerta = true;
+                    alertasJaMostrados.add(alerta.id);
+                    
+                    // Determinar tipo do alerta
+                    const msg = alerta.mensagem;
+                    if (msg.includes('Todas as tarefas foram finalizadas') || msg.includes('finalizadas')) {
+                        tipoDoNovoAlerta = 'sucesso';
+                    } else if (msg.includes('Erro') || msg.includes('erro')) {
+                        tipoDoNovoAlerta = 'erro';
+                    }
+                }
+                
+                const alertaDiv = document.createElement('div');
+                
+                let classe = 'alerta-item';
+                const msg = alerta.mensagem;
+                
+                // Detectar tipo de alerta pelo texto (sem usar emojis na comparação)
+                if (msg.includes('Todas as tarefas foram finalizadas') || msg.includes('finalizadas')) {
+                    classe += ' sucesso';
+                } else if (msg.includes('Erro') || msg.includes('erro')) {
+                    classe += ' erro';
+                }
+                
+                alertaDiv.className = classe;
+                alertaDiv.innerHTML = `
+                    <div class="alerta-conteudo">
+                        <div class="alerta-texto">
+                            <div class="alerta-mensagem">${alerta.mensagem}</div>
+                            <div class="alerta-timestamp">${alerta.timestamp}</div>
+                        </div>
+                        <button class="alerta-fechar" onclick="fecharAlerta('${alerta.id}')">×</button>
+                    </div>
+                `;
+                
+                container.appendChild(alertaDiv);
+            });
+            
+            // Tocar som apenas se houver novo alerta
+            if (temNovoAlerta) {
+                tocarSomAlerta(tipoDoNovoAlerta);
+                console.log('🔔 Som de alerta tocado:', tipoDoNovoAlerta);
+            }
+        }
+
+        // Fechar alerta específico
+        function fecharAlerta(alertaId) {
+            const alerta = document.querySelector(`[onclick*="${alertaId}"]`)?.closest('.alerta-item');
+            if (alerta) {
+                alerta.style.animation = 'slideOut 0.3s ease-out';
+                setTimeout(() => alerta.remove(), 300);
+                
+                // Marcar como visualizado no backend
+                fetch(`/api/alertas/visualizar/${alertaId}`, { method: 'POST' })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            console.log(`✅ Alerta ${alertaId} marcado como visualizado`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erro ao marcar alerta como visualizado:', error);
+                    });
+            }
+        }
+        
+        // Função para testar som manualmente
+        function testarSomManual() {
+            console.log('🎵 Teste de som iniciado pelo usuário');
+            tocarSomAlerta('normal');
+            
+            // Mostrar feedback visual
+            const btn = document.getElementById('btnTestarSom');
+            const textoOriginal = btn.innerHTML;
+            btn.innerHTML = '✅';
+            setTimeout(() => {
+                btn.innerHTML = textoOriginal;
+            }, 1000);
+        }
+
+        // Limpar todos os alertas
+        async function limparTodosAlertas() {
+            try {
+                await fetch('/api/alertas/limpar', { method: 'POST' });
+                const container = document.getElementById('alertas-container');
+                if (container) {
+                    container.innerHTML = '';
+                }
+                alertasJaMostrados.clear(); // Limpar registro de alertas
+                console.log('🗑️ Alertas limpos');
+            } catch (error) {
+                console.error('Erro ao limpar alertas:', error);
+            }
+        }
+
+        // Iniciar quando a página carregar
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', iniciarMonitoramentoAlertas);
+        } else {
+            iniciarMonitoramentoAlertas();
+        }
+    </script>
 </body>
 </html>

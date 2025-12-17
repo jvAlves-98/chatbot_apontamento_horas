@@ -1,6 +1,9 @@
 """
 Script para importar tarefas de colaboradores do Excel para PostgreSQL
-Com normalização de CNPJ/CPF e validação de Foreign Keys
+Versão 2.0 - COM VERIFICAÇÃO DE DUPLICATAS
+- Não adiciona tarefas que já existem no banco
+- Preserva tarefas existentes e apontamentos vinculados
+- Normalização de CNPJ/CPF e validação de Foreign Keys
 """
 
 import pandas as pd
@@ -121,38 +124,71 @@ def buscar_dados_referencia(conn):
     
     return cnpjs_validos, grupos_validos, usuarios_validos
 
+def buscar_tarefas_existentes(conn):
+    """
+    Busca todas as tarefas existentes no banco de dados
+    Retorna um set com tuplas (cnpj_cpf, cod_grupo_tarefa, nome_tarefa, colaborador_1) para verificação rápida
+    """
+    cursor = conn.cursor()
+    
+    query = """
+        SELECT cnpj_cpf, cod_grupo_tarefa, nome_tarefa, colaborador_1
+        FROM apontador_horas.tarefas_colaborador
+    """
+    cursor.execute(query)
+    
+    # Criar set com chave composta para verificação rápida
+    tarefas_existentes = set()
+    for row in cursor.fetchall():
+        chave = (row[0], row[1], row[2], row[3])
+        tarefas_existentes.add(chave)
+    
+    cursor.close()
+    
+    return tarefas_existentes
+
 # =====================================================
 # FUNÇÃO PRINCIPAL DE IMPORTAÇÃO
 # =====================================================
 def importar_tarefas_colaborador(arquivo_excel):
     """
     Importa tarefas de colaboradores da planilha Excel para o PostgreSQL
+    COM VERIFICAÇÃO DE DUPLICATAS - não adiciona tarefas que já existem
     """
     
     print(f"[{datetime.now()}] Iniciando importação de tarefas de colaboradores...")
+    print("="*80)
     
     # 1. Ler a planilha
-    print(f"[{datetime.now()}] Lendo planilha...")
+    print(f"\n[{datetime.now()}] Lendo planilha...")
     df = pd.read_excel(arquivo_excel)
-    print(f"Total de registros na planilha: {len(df)}")
+    print(f"✓ Total de registros na planilha: {len(df)}")
     
     # 2. Conectar ao banco para buscar dados de referência
-    print(f"[{datetime.now()}] Conectando ao banco para validação...")
+    print(f"\n[{datetime.now()}] Conectando ao banco para validação...")
     try:
         conn = psycopg2.connect(**DB_CONFIG)
         cnpjs_validos, grupos_validos, usuarios_validos = buscar_dados_referencia(conn)
-        conn.close()
         
         print(f"✓ {len(cnpjs_validos)} clientes encontrados")
         print(f"✓ {len(grupos_validos)} grupos de tarefa encontrados")
         print(f"✓ {len(usuarios_validos)} funcionários encontrados")
         
+        # 2.1 Buscar tarefas que JÁ EXISTEM no banco
+        print(f"\n[{datetime.now()}] Buscando tarefas existentes no banco...")
+        tarefas_existentes = buscar_tarefas_existentes(conn)
+        print(f"✓ {len(tarefas_existentes)} tarefas já existem no banco")
+        
     except Exception as e:
-        print(f"Erro ao buscar dados de referência: {e}")
+        print(f"❌ Erro ao buscar dados de referência: {e}")
+        if conn:
+            conn.close()
         return
     
     # 3. Preparar os dados
-    print(f"\n[{datetime.now()}] Preparando e validando dados...")
+    print(f"\n{'='*80}")
+    print("PREPARANDO E VALIDANDO DADOS")
+    print("="*80)
     
     # Normalizar campos
     df['cnpj_cpf_normalizado'] = df['cnpj_cpf'].apply(normalizar_cnpj_cpf)
@@ -188,10 +224,12 @@ def importar_tarefas_colaborador(arquivo_excel):
             
             print(f"  - {row.get('nome_empresa', 'N/A')[:40]}: {', '.join(motivos)}")
     
-    print(f"\nRegistros após limpeza inicial: {len(df_limpo)}")
+    print(f"\n✓ Registros após limpeza inicial: {len(df_limpo)}")
     
     # 4. Validar Foreign Keys
-    print(f"\n=== VALIDAÇÃO DE FOREIGN KEYS ===")
+    print(f"\n{'='*80}")
+    print("VALIDAÇÃO DE FOREIGN KEYS")
+    print("="*80)
     
     # Validar CNPJs
     cnpjs_invalidos = df_limpo[~df_limpo['cnpj_cpf_normalizado'].isin(cnpjs_validos)]
@@ -202,13 +240,10 @@ def importar_tarefas_colaborador(arquivo_excel):
         if len(cnpjs_invalidos) > 10:
             print(f"  ... e mais {len(cnpjs_invalidos) - 10} registros")
         
-        resposta = input("\nRemover registros com CNPJ/CPF inválido? (s/n): ")
-        if resposta.lower() == 's':
-            df_limpo = df_limpo[df_limpo['cnpj_cpf_normalizado'].isin(cnpjs_validos)]
-            print(f"✓ Removidos {len(cnpjs_invalidos)} registros")
-        else:
-            print("❌ Importação cancelada. Corrija os CNPJs/CPFs inválidos primeiro.")
-            return
+        print("\n❌ ImportaÃ§Ã£o cancelada. Corrija os CNPJs/CPFs invÃ¡lidos primeiro.")
+        print("   Adicione esses clientes na tabela 'clientes' antes de importar as tarefas.")
+        conn.close()
+        return
     else:
         print("✓ Todos os CNPJs/CPFs são válidos")
     
@@ -218,6 +253,7 @@ def importar_tarefas_colaborador(arquivo_excel):
         print(f"\n⚠️ AVISO: {len(grupos_invalidos)} registros com cod_grupo_tarefa não encontrado:")
         print(f"Códigos inválidos: {grupos_invalidos['cod_grupo_tarefa_normalizado'].unique()}")
         print("❌ Importação cancelada. Adicione esses grupos na tabela grupo_tarefas primeiro.")
+        conn.close()
         return
     else:
         print("✓ Todos os códigos de grupo são válidos")
@@ -228,6 +264,7 @@ def importar_tarefas_colaborador(arquivo_excel):
         print(f"\n⚠️ AVISO: {len(colab1_invalidos)} registros com colaborador_1 não encontrado:")
         print(f"Usuários inválidos: {colab1_invalidos['colaborador_1'].unique()}")
         print("❌ Importação cancelada. Cadastre esses usuários na tabela funcionarios primeiro.")
+        conn.close()
         return
     else:
         print("✓ Todos os colaborador_1 são válidos")
@@ -239,30 +276,68 @@ def importar_tarefas_colaborador(arquivo_excel):
         print(f"\n⚠️ AVISO: {len(colab2_invalidos)} registros com colaborador_2 não encontrado:")
         print(f"Usuários inválidos: {colab2_invalidos['colaborador_2'].unique()}")
         print("❌ Importação cancelada. Cadastre esses usuários na tabela funcionarios primeiro.")
+        conn.close()
         return
     else:
         print("✓ Todos os colaborador_2 são válidos")
     
-    print(f"\n✓ Todas as validações passaram!")
-    print(f"Registros finais para importação: {len(df_limpo)}")
+    # 5. FILTRAR DUPLICATAS - NOVIDADE DA V2.0
+    print(f"\n{'='*80}")
+    print("VERIFICAÇÃO DE DUPLICATAS")
+    print("="*80)
     
-    # Debug: mostrar alguns registros
-    print("\n=== PRIMEIROS REGISTROS PREPARADOS ===")
-    for idx, row in df_limpo.head(3).iterrows():
-        print(f"  Cliente: {row['cnpj_cpf_normalizado']} - {row['nome_empresa'][:30]}...")
-        print(f"  Grupo: {row['cod_grupo_tarefa_normalizado']} - {row['nome_tarefa'][:40]}...")
-        print(f"  Colaboradores: {row['colaborador_1']} + {row['colaborador_2']}")
-        print()
+    # Criar coluna com chave composta para verificação
+    # Chave: (CNPJ/CPF + Grupo + Nome Tarefa + Colaborador Principal)
+    df_limpo['chave_tarefa'] = df_limpo.apply(
+        lambda row: (row['cnpj_cpf_normalizado'], row['cod_grupo_tarefa_normalizado'], 
+                     row['nome_tarefa'], row['colaborador_1']),
+        axis=1
+    )
     
-    # 5. Conectar ao banco de dados para inserção
-    print(f"[{datetime.now()}] Conectando ao banco de dados...")
+    # Filtrar apenas tarefas NOVAS (que não existem no banco)
+    df_novas = df_limpo[~df_limpo['chave_tarefa'].isin(tarefas_existentes)]
+    df_duplicadas = df_limpo[df_limpo['chave_tarefa'].isin(tarefas_existentes)]
+    
+    print(f"\n📊 Resultado da verificação:")
+    print(f"   • Total de tarefas na planilha (após limpeza): {len(df_limpo)}")
+    print(f"   • Tarefas que JÁ EXISTEM no banco: {len(df_duplicadas)}")
+    print(f"   • Tarefas NOVAS para importar: {len(df_novas)}")
+    
+    if len(df_duplicadas) > 0:
+        print(f"\n⚠️ Exemplos de tarefas duplicadas (NÃO serão importadas):")
+        for idx, row in df_duplicadas.head(5).iterrows():
+            print(f"   - {row['nome_empresa'][:30]:30} | Grupo: {row['cod_grupo_tarefa_normalizado']} | {row['nome_tarefa'][:35]:35} | {row['colaborador_1']}")
+        if len(df_duplicadas) > 5:
+            print(f"   ... e mais {len(df_duplicadas) - 5} tarefas duplicadas")
+    
+    if len(df_novas) == 0:
+        print(f"\n✓ Nenhuma tarefa nova para importar. Todas já existem no banco!")
+        conn.close()
+        return
+    
+    print(f"\n✅ {len(df_novas)} tarefas novas serão importadas")
+    
+    # Mostrar exemplos de tarefas que serão importadas
+    if len(df_novas) > 0:
+        print(f"\n📝 Exemplos de tarefas que SERÃO importadas:")
+        for idx, row in df_novas.head(5).iterrows():
+            print(f"   - {row['nome_empresa'][:30]:30} | Grupo: {row['cod_grupo_tarefa_normalizado']} | {row['nome_tarefa'][:35]:35} | {row['colaborador_1']}")
+        if len(df_novas) > 5:
+            print(f"   ... e mais {len(df_novas) - 5} tarefas novas")
+    
+    # 6. Confirmar importação
+    print(f"\n{'='*80}")
+    resposta = input(f"\n🔹 Deseja importar {len(df_novas)} tarefas novas? (s/n): ")
+    if resposta.lower() != 's':
+        print("❌ Importação cancelada pelo usuário.")
+        conn.close()
+        return
+    
+    # 7. Inserir dados
+    print(f"\n[{datetime.now()}] Inserindo {len(df_novas)} tarefas novas...")
+    
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
         cursor = conn.cursor()
-        print("Conexão estabelecida com sucesso!")
-        
-        # 6. Inserir dados
-        print(f"[{datetime.now()}] Inserindo dados...")
         
         # Preparar dados para inserção
         dados = [
@@ -276,7 +351,7 @@ def importar_tarefas_colaborador(arquivo_excel):
                 row['estimativa_horas'],
                 row['prioridade']
             )
-            for _, row in df_limpo.iterrows()
+            for _, row in df_novas.iterrows()
         ]
         
         # Query de inserção
@@ -293,15 +368,17 @@ def importar_tarefas_colaborador(arquivo_excel):
         # Commit
         conn.commit()
         
-        print(f"[{datetime.now()}] ✓ {len(dados)} tarefas inseridas com sucesso!")
+        print(f"[{datetime.now()}] ✅ {len(dados)} tarefas inseridas com sucesso!")
         
-        # 7. Verificar resultado
+        # 8. Verificar resultado
         cursor.execute("SELECT COUNT(*) FROM apontador_horas.tarefas_colaborador")
         total = cursor.fetchone()[0]
-        print(f"Total de tarefas na tabela: {total}")
+        print(f"\n📊 Total de tarefas na tabela agora: {total}")
         
         # Estatísticas
-        print("\n=== ESTATÍSTICAS ===")
+        print(f"\n{'='*80}")
+        print("ESTATÍSTICAS FINAIS")
+        print("="*80)
         
         cursor.execute("""
             SELECT prioridade, COUNT(*) as total 
@@ -309,19 +386,20 @@ def importar_tarefas_colaborador(arquivo_excel):
             GROUP BY prioridade 
             ORDER BY total DESC
         """)
-        print("\nTarefas por prioridade:")
+        print("\n📌 Tarefas por prioridade (total no banco):")
         for prioridade, count in cursor.fetchall():
-            print(f"  {prioridade}: {count}")
+            print(f"   {prioridade}: {count}")
         
         cursor.execute("""
             SELECT colaborador_1, COUNT(*) as total 
             FROM apontador_horas.tarefas_colaborador 
             GROUP BY colaborador_1 
             ORDER BY total DESC
+            LIMIT 10
         """)
-        print("\nTarefas por colaborador principal:")
+        print("\n👥 Top 10 colaboradores com mais tarefas (total no banco):")
         for colab, count in cursor.fetchall():
-            print(f"  {colab}: {count}")
+            print(f"   {colab}: {count}")
         
         cursor.execute("""
             SELECT cod_grupo_tarefa, COUNT(*) as total 
@@ -329,23 +407,29 @@ def importar_tarefas_colaborador(arquivo_excel):
             GROUP BY cod_grupo_tarefa 
             ORDER BY total DESC
         """)
-        print("\nTarefas por grupo:")
+        print("\n📁 Tarefas por grupo (total no banco):")
         for grupo, count in cursor.fetchall():
-            print(f"  {grupo}: {count}")
+            print(f"   {grupo}: {count}")
         
         # Fechar conexão
         cursor.close()
         conn.close()
         
-        print(f"\n[{datetime.now()}] Importação concluída!")
+        print(f"\n{'='*80}")
+        print(f"✅ IMPORTAÇÃO CONCLUÍDA COM SUCESSO!")
+        print("="*80)
+        print(f"   • {len(df_novas)} tarefas novas adicionadas")
+        print(f"   • {len(df_duplicadas)} tarefas duplicadas ignoradas (já existiam)")
+        print(f"   • {total} tarefas totais no banco de dados")
+        print("="*80)
         
     except psycopg2.Error as e:
-        print(f"Erro no PostgreSQL: {e}")
+        print(f"\n❌ Erro no PostgreSQL: {e}")
         if conn:
             conn.rollback()
         raise
     except Exception as e:
-        print(f"Erro: {e}")
+        print(f"\n❌ Erro: {e}")
         raise
 
 # =====================================================
@@ -355,15 +439,21 @@ if __name__ == "__main__":
     # Caminho do arquivo
     arquivo = "/home/jvfalves/documentos/projetos/chatbot_apontamento_horas/files/tarefas_colaborador.xlsx"
     
+    print("="*80)
+    print(" IMPORTAÇÃO DE TAREFAS DE COLABORADORES - VERSÃO 2.0")
+    print(" COM VERIFICAÇÃO DE DUPLICATAS")
+    print("="*80)
+    
     # Executar importação
     importar_tarefas_colaborador(arquivo)
     
-    print("\n" + "="*60)
-    print("INFORMAÇÕES IMPORTANTES:")
-    print("="*60)
-    print("1. CNPJs/CPFs foram normalizados para 14 dígitos")
-    print("2. Todas as Foreign Keys foram validadas")
-    print("3. Registros inválidos foram identificados antes da importação")
-    print("4. Certifique-se de que as tabelas clientes, grupo_tarefas")
-    print("   e funcionarios estejam populadas antes de importar")
-    print("="*60)
+    print("\n" + "="*80)
+    print("ℹ️  INFORMAÇÕES IMPORTANTES:")
+    print("="*80)
+    print("1. ✅ Tarefas duplicadas NÃO são importadas novamente")
+    print("2. ✅ Tarefas existentes e seus apontamentos são preservados")
+    print("3. ✅ CNPJs/CPFs são normalizados automaticamente")
+    print("4. ✅ Todas as Foreign Keys são validadas antes da importação")
+    print("5. ⚠️  Critério de duplicata: (CNPJ/CPF + Grupo + Nome Tarefa + Colaborador)")
+    print("6. 💡 A mesma tarefa pode existir para colaboradores diferentes")
+    print("="*80)

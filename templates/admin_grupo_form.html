@@ -1,0 +1,113 @@
+{% extends "admin_base.html" %}
+
+{% block title %}{{ 'Editar' if grupo else 'Novo' }} Grupo - Admin Booker{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>{{ '✏️ Editar' if grupo else '➕ Novo' }} Grupo de Tarefas</h2>
+    
+    {% if grupo and total_tarefas %}
+    <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
+        <strong>⚠️ Atenção:</strong> Este grupo possui <strong>{{ total_tarefas }}</strong> tarefa(s) vinculada(s).
+        <br>Se você alterar o código, as tarefas serão atualizadas automaticamente.
+    </div>
+    {% endif %}
+
+    <form method="POST" onsubmit="return validarFormulario()">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="cod_grupo_tarefa">Código do Grupo *</label>
+                <input type="text" 
+                       id="cod_grupo_tarefa" 
+                       name="cod_grupo_tarefa" 
+                       value="{{ grupo.cod_grupo_tarefa if grupo else '' }}"
+                       required
+                       maxlength="20">
+                <small>Exemplo: CONT-2024, FIS, RH-01, 1.01</small>
+            </div>
+
+            <div class="form-group">
+                <label for="nome_grupo_tarefa">Nome do Grupo *</label>
+                <input type="text" 
+                       id="nome_grupo_tarefa" 
+                       name="nome_grupo_tarefa" 
+                       value="{{ grupo.nome_grupo_tarefa if grupo else '' }}"
+                       required
+                       maxlength="100">
+                <small>Nome descritivo do grupo de tarefas</small>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="departamento">Departamento</label>
+            <input type="text" 
+                   id="departamento" 
+                   name="departamento" 
+                   value="{{ grupo.departamento if grupo and grupo.departamento else '' }}"
+                   list="departamentos-list"
+                   maxlength="100"
+                   placeholder="Ex: Contabilidade, Fiscal, RH...">
+            <datalist id="departamentos-list">
+                {% for dept in departamentos %}
+                <option value="{{ dept }}">
+                {% endfor %}
+            </datalist>
+            <small>Departamento ao qual este grupo de tarefas pertence (opcional)</small>
+        </div>
+
+        <div style="display: flex; gap: 15px; margin-top: 30px;">
+            <button type="submit" class="btn btn-success">
+                {{ '💾 Salvar Alterações' if grupo else '➕ Cadastrar Grupo' }}
+            </button>
+            <a href="{{ url_for('listar_grupos') }}" class="btn btn-secondary">❌ Cancelar</a>
+        </div>
+    </form>
+</div>
+
+<!-- Informações adicionais -->
+<div class="card" style="margin-top: 20px; background: #f8f9fa;">
+    <h3 style="margin-bottom: 15px; font-size: 18px;">ℹ️ Informações sobre Grupos</h3>
+    <ul style="line-height: 1.8; color: #666;">
+        <li><strong>Código do Grupo:</strong> Identificador único, use abreviações claras (ex: CONT, FIS, RH)</li>
+        <li><strong>Nome do Grupo:</strong> Descrição completa do tipo de tarefa (ex: Contabilidade, Fiscal, Recursos Humanos)</li>
+        <li><strong>Departamento:</strong> Agrupa tarefas por área/setor da empresa para facilitar relatórios e análises</li>
+        <li><strong>Organização:</strong> Use grupos para categorizar tarefas similares e facilitar relatórios</li>
+        <li><strong>Vinculação:</strong> Cada tarefa deve estar associada a um grupo para melhor controle</li>
+    </ul>
+    
+    <div style="margin-top: 20px; padding: 15px; background: white; border-radius: 8px; border-left: 4px solid #FFD500;">
+        <strong>💡 Exemplos de Departamentos:</strong>
+        <div style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px;">
+            <span class="badge badge-info">Contabilidade</span>
+            <span class="badge badge-info">Fiscal</span>
+            <span class="badge badge-info">Recursos Humanos</span>
+            <span class="badge badge-info">Departamento Pessoal</span>
+            <span class="badge badge-info">Societário</span>
+            <span class="badge badge-info">Consultoria</span>
+            <span class="badge badge-info">Auditoria</span>
+            <span class="badge badge-info">Financeiro</span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function validarFormulario() {
+    const codigo = document.getElementById('cod_grupo_tarefa').value.trim();
+    const nome = document.getElementById('nome_grupo_tarefa').value.trim();
+    
+    if (!codigo || !nome) {
+        alert('⚠️ Por favor, preencha todos os campos obrigatórios.');
+        return false;
+    }
+    
+    return true;
+}
+
+// Auto-formatar código (remover espaços)
+document.getElementById('cod_grupo_tarefa').addEventListener('input', function(e) {
+    this.value = this.value.replace(/\s+/g, '');
+});
+</script>
+{% endblock %}

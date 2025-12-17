@@ -430,6 +430,8 @@
             <li><a href="{{ url_for('dashboard') }}" {% if request.endpoint == 'dashboard' %}class="active"{% endif %}>📊 Dashboard</a></li>
             <li><a href="{{ url_for('listar_usuarios') }}" {% if 'usuario' in request.endpoint %}class="active"{% endif %}>👥 Usuários</a></li>
             <li><a href="{{ url_for('listar_tarefas') }}" {% if 'tarefa' in request.endpoint %}class="active"{% endif %}>📋 Tarefas</a></li>
+            <li><a href="{{ url_for('listar_grupos') }}" {% if 'grupo' in request.endpoint %}class="active"{% endif %}>🗂️ Grupos</a></li>
+            <li><a href="{{ url_for('listar_clientes') }}" {% if 'cliente' in request.endpoint %}class="active"{% endif %}>🏢 Clientes</a></li>
         </ul>
     </nav>
     {% endif %}

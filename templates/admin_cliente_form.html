@@ -1,0 +1,128 @@
+{% extends "admin_base.html" %}
+
+{% block title %}{{ 'Editar' if cliente else 'Novo' }} Cliente - Admin Booker{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>{{ '✏️ Editar' if cliente else '➕ Novo' }} Cliente</h2>
+
+    <form method="POST" onsubmit="return validarFormulario()">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="num_cnpj_cpf">CNPJ/CPF *</label>
+                <input type="text" 
+                       id="num_cnpj_cpf" 
+                       name="num_cnpj_cpf" 
+                       value="{{ cliente.num_cnpj_cpf if cliente else '' }}"
+                       required
+                       maxlength="14"
+                       placeholder="Somente números">
+                <small>14 dígitos - Ex: 00982872000100</small>
+            </div>
+
+            <div class="form-group">
+                <label for="nom_cliente">Nome do Cliente *</label>
+                <input type="text" 
+                       id="nom_cliente" 
+                       name="nom_cliente" 
+                       value="{{ cliente.nom_cliente if cliente else '' }}"
+                       required
+                       maxlength="255">
+                <small>Nome completo ou razão social</small>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="cod_grupo_cliente">Código do Grupo</label>
+                <input type="number" 
+                       id="cod_grupo_cliente" 
+                       name="cod_grupo_cliente" 
+                       value="{{ cliente.cod_grupo_cliente if cliente else 0 }}"
+                       min="0">
+                <small>Código numérico do grupo (0 = sem grupo)</small>
+            </div>
+
+            <div class="form-group">
+                <label for="des_grupo">Descrição do Grupo</label>
+                <input type="text" 
+                       id="des_grupo" 
+                       name="des_grupo" 
+                       value="{{ cliente.des_grupo if cliente else 'SEM GRUPO' }}"
+                       list="grupos-list"
+                       maxlength="100">
+                <datalist id="grupos-list">
+                    {% for g in grupos %}
+                    <option value="{{ g }}">
+                    {% endfor %}
+                </datalist>
+                <small>Nome do grupo de clientes</small>
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 15px; margin-top: 30px;">
+            <button type="submit" class="btn btn-success">
+                {{ '💾 Salvar Alterações' if cliente else '➕ Cadastrar Cliente' }}
+            </button>
+            <a href="{{ url_for('listar_clientes') }}" class="btn btn-secondary">❌ Cancelar</a>
+        </div>
+    </form>
+</div>
+
+<!-- Informações adicionais -->
+<div class="card" style="margin-top: 20px; background: #f8f9fa;">
+    <h3 style="margin-bottom: 15px; font-size: 18px;">ℹ️ Informações sobre Clientes</h3>
+    <ul style="line-height: 1.8; color: #666;">
+        <li><strong>CNPJ/CPF:</strong> Identificador único do cliente (somente números, 14 dígitos)</li>
+        <li><strong>Nome do Cliente:</strong> Razão social ou nome completo</li>
+        <li><strong>Código do Grupo:</strong> Número que identifica o grupo (0 para clientes sem grupo)</li>
+        <li><strong>Descrição do Grupo:</strong> Nome descritivo para agrupar clientes similares</li>
+        <li><strong>Agrupamento:</strong> Use grupos para organizar clientes por características comuns (rede, região, etc)</li>
+    </ul>
+    
+    <div style="margin-top: 20px; padding: 15px; background: white; border-radius: 8px; border-left: 4px solid #FFD500;">
+        <strong>💡 Exemplos de Grupos:</strong>
+        <div style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px;">
+            <span class="badge badge-info">AUTUS</span>
+            <span class="badge badge-info">DECIO</span>
+            <span class="badge badge-info">PMG</span>
+            <span class="badge badge-info">ISF - BALDEZ</span>
+            <span class="badge badge-info">MATRIZ</span>
+            <span class="badge badge-info">FILIAIS</span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function validarFormulario() {
+    const cnpj = document.getElementById('num_cnpj_cpf').value.trim();
+    const nome = document.getElementById('nom_cliente').value.trim();
+    
+    if (!cnpj || !nome) {
+        alert('⚠️ Por favor, preencha todos os campos obrigatórios.');
+        return false;
+    }
+    
+    // Validar se CNPJ tem apenas números
+    if (!/^\d+$/.test(cnpj)) {
+        alert('⚠️ O CNPJ/CPF deve conter apenas números.');
+        return false;
+    }
+    
+    // Validar tamanho
+    if (cnpj.length !== 14 && cnpj.length !== 11) {
+        alert('⚠️ O CNPJ deve ter 14 dígitos ou CPF deve ter 11 dígitos.');
+        return false;
+    }
+    
+    return true;
+}
+
+// Permitir apenas números no campo CNPJ
+document.getElementById('num_cnpj_cpf').addEventListener('input', function(e) {
+    this.value = this.value.replace(/\D/g, '');
+});
+</script>
+{% endblock %}

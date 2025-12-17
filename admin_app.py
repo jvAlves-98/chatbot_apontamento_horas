@@ -530,6 +530,438 @@ def deletar_tarefa(id):
         conn.close()
 
 # ========================================
+# GERENCIAMENTO DE GRUPOS DE TAREFAS
+# ========================================
+
+@app.route('/grupos')
+def listar_grupos():
+    if 'admin_usuario' not in session:
+        return redirect(url_for('login'))
+    
+    conn = get_db_connection()
+    if not conn:
+        flash('Erro de conexão', 'error')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Buscar filtros
+        busca = request.args.get('busca', '')
+        departamento_filtro = request.args.get('departamento', '')
+        
+        query = """
+            SELECT cod_grupo_tarefa, nome_grupo_tarefa, departamento
+            FROM grupo_tarefas
+            WHERE 1=1
+        """
+        params = []
+        
+        if busca:
+            query += " AND (cod_grupo_tarefa ILIKE %s OR nome_grupo_tarefa ILIKE %s)"
+            params.extend([f'%{busca}%', f'%{busca}%'])
+        
+        if departamento_filtro:
+            query += " AND departamento ILIKE %s"
+            params.append(f'%{departamento_filtro}%')
+        
+        query += " ORDER BY departamento, cod_grupo_tarefa"
+        
+        cursor.execute(query, params)
+        grupos = cursor.fetchall()
+        
+        # Buscar lista de departamentos únicos para o filtro
+        cursor.execute("""
+            SELECT DISTINCT departamento 
+            FROM grupo_tarefas 
+            WHERE departamento IS NOT NULL AND departamento != ''
+            ORDER BY departamento
+        """)
+        departamentos = [row['departamento'] for row in cursor.fetchall()]
+        
+        return render_template('admin_grupos.html', 
+                             grupos=grupos, 
+                             departamentos=departamentos,
+                             filtros={'busca': busca, 'departamento': departamento_filtro})
+        
+    except Exception as e:
+        flash(f'Erro ao listar grupos: {str(e)}', 'error')
+        return redirect(url_for('dashboard'))
+    finally:
+        conn.close()
+
+@app.route('/grupos/novo', methods=['GET', 'POST'])
+def novo_grupo():
+    if 'admin_usuario' not in session:
+        return redirect(url_for('login'))
+    
+    if request.method == 'POST':
+        cod_grupo_tarefa = request.form.get('cod_grupo_tarefa')
+        nome_grupo_tarefa = request.form.get('nome_grupo_tarefa')
+        departamento = request.form.get('departamento', '').strip()
+        
+        conn = get_db_connection()
+        if not conn:
+            flash('Erro de conexão', 'error')
+            return redirect(url_for('listar_grupos'))
+        
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO grupo_tarefas (cod_grupo_tarefa, nome_grupo_tarefa, departamento)
+                VALUES (%s, %s, %s)
+            """, (cod_grupo_tarefa, nome_grupo_tarefa, departamento if departamento else None))
+            
+            conn.commit()
+            flash(f'Grupo {cod_grupo_tarefa} cadastrado com sucesso!', 'success')
+            return redirect(url_for('listar_grupos'))
+            
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            flash('Código do grupo já existe', 'error')
+        except Exception as e:
+            conn.rollback()
+            flash(f'Erro ao cadastrar: {str(e)}', 'error')
+        finally:
+            conn.close()
+    
+    # Buscar lista de departamentos existentes para sugestões
+    conn = get_db_connection()
+    departamentos = []
+    if conn:
+        try:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("""
+                SELECT DISTINCT departamento 
+                FROM grupo_tarefas 
+                WHERE departamento IS NOT NULL AND departamento != ''
+                ORDER BY departamento
+            """)
+            departamentos = [row['departamento'] for row in cursor.fetchall()]
+        except:
+            pass
+        finally:
+            conn.close()
+    
+    return render_template('admin_grupo_form.html', grupo=None, departamentos=departamentos)
+
+@app.route('/grupos/editar/<cod>', methods=['GET', 'POST'])
+def editar_grupo(cod):
+    if 'admin_usuario' not in session:
+        return redirect(url_for('login'))
+    
+    conn = get_db_connection()
+    if not conn:
+        flash('Erro de conexão', 'error')
+        return redirect(url_for('listar_grupos'))
+    
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        if request.method == 'POST':
+            novo_cod = request.form.get('cod_grupo_tarefa')
+            nome_grupo_tarefa = request.form.get('nome_grupo_tarefa')
+            departamento = request.form.get('departamento', '').strip()
+            
+            # Se mudou o código, precisa atualizar as referências em tarefas_colaborador
+            if novo_cod != cod:
+                cursor.execute("""
+                    UPDATE tarefas_colaborador
+                    SET cod_grupo_tarefa = %s
+                    WHERE cod_grupo_tarefa = %s
+                """, (novo_cod, cod))
+            
+            cursor.execute("""
+                UPDATE grupo_tarefas
+                SET cod_grupo_tarefa = %s, nome_grupo_tarefa = %s, departamento = %s
+                WHERE cod_grupo_tarefa = %s
+            """, (novo_cod, nome_grupo_tarefa, departamento if departamento else None, cod))
+            
+            conn.commit()
+            flash('Grupo atualizado com sucesso!', 'success')
+            return redirect(url_for('listar_grupos'))
+        
+        # GET - carregar dados
+        cursor.execute("SELECT * FROM grupo_tarefas WHERE cod_grupo_tarefa = %s", (cod,))
+        grupo = cursor.fetchone()
+        
+        if not grupo:
+            flash('Grupo não encontrado', 'error')
+            return redirect(url_for('listar_grupos'))
+        
+        # Contar quantas tarefas usam este grupo
+        cursor.execute("SELECT COUNT(*) as total FROM tarefas_colaborador WHERE cod_grupo_tarefa = %s", (cod,))
+        total_tarefas = cursor.fetchone()['total']
+        
+        # Buscar lista de departamentos existentes para sugestões
+        cursor.execute("""
+            SELECT DISTINCT departamento 
+            FROM grupo_tarefas 
+            WHERE departamento IS NOT NULL AND departamento != ''
+            ORDER BY departamento
+        """)
+        departamentos = [row['departamento'] for row in cursor.fetchall()]
+        
+        return render_template('admin_grupo_form.html', 
+                             grupo=grupo, 
+                             total_tarefas=total_tarefas,
+                             departamentos=departamentos)
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        flash(f'Erro ao editar grupo: {str(e)}', 'error')
+        return redirect(url_for('listar_grupos'))
+    finally:
+        conn.close()
+
+@app.route('/grupos/deletar/<cod>', methods=['POST'])
+def deletar_grupo(cod):
+    if 'admin_usuario' not in session:
+        return jsonify({'success': False, 'message': 'Não autorizado'}), 401
+    
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'success': False, 'message': 'Erro de conexão'}), 500
+    
+    try:
+        cursor = conn.cursor()
+        
+        # Verificar se tem tarefas vinculadas
+        cursor.execute("SELECT COUNT(*) as total FROM tarefas_colaborador WHERE cod_grupo_tarefa = %s", (cod,))
+        result = cursor.fetchone()
+        
+        if result[0] > 0:
+            return jsonify({
+                'success': False,
+                'message': f'Não é possível deletar! Este grupo tem {result[0]} tarefa(s) vinculada(s).'
+            }), 400
+        
+        cursor.execute("DELETE FROM grupo_tarefas WHERE cod_grupo_tarefa = %s", (cod,))
+        conn.commit()
+        
+        return jsonify({'success': True, 'message': 'Grupo deletado com sucesso!'})
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        conn.close()
+
+# ========================================
+# GERENCIAMENTO DE CLIENTES
+# ========================================
+
+@app.route('/clientes')
+def listar_clientes():
+    if 'admin_usuario' not in session:
+        return redirect(url_for('login'))
+    
+    conn = get_db_connection()
+    if not conn:
+        flash('Erro de conexão', 'error')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Buscar filtros
+        busca = request.args.get('busca', '')
+        grupo = request.args.get('grupo', '')
+        
+        query = """
+            SELECT id, num_cnpj_cpf, nom_cliente, cod_grupo_cliente, des_grupo
+            FROM clientes
+            WHERE 1=1
+        """
+        params = []
+        
+        if busca:
+            query += " AND (num_cnpj_cpf ILIKE %s OR nom_cliente ILIKE %s)"
+            params.extend([f'%{busca}%', f'%{busca}%'])
+        
+        if grupo:
+            query += " AND des_grupo ILIKE %s"
+            params.append(f'%{grupo}%')
+        
+        query += " ORDER BY nom_cliente"
+        
+        cursor.execute(query, params)
+        clientes = cursor.fetchall()
+        
+        # Buscar lista de grupos únicos para o filtro
+        cursor.execute("""
+            SELECT DISTINCT des_grupo 
+            FROM clientes 
+            WHERE des_grupo IS NOT NULL AND des_grupo != '' AND des_grupo != 'SEM GRUPO'
+            ORDER BY des_grupo
+        """)
+        grupos = [row['des_grupo'] for row in cursor.fetchall()]
+        
+        return render_template('admin_clientes.html', 
+                             clientes=clientes, 
+                             grupos=grupos,
+                             filtros={'busca': busca, 'grupo': grupo})
+        
+    except Exception as e:
+        flash(f'Erro ao listar clientes: {str(e)}', 'error')
+        return redirect(url_for('dashboard'))
+    finally:
+        conn.close()
+
+@app.route('/clientes/novo', methods=['GET', 'POST'])
+def novo_cliente():
+    if 'admin_usuario' not in session:
+        return redirect(url_for('login'))
+    
+    if request.method == 'POST':
+        num_cnpj_cpf = request.form.get('num_cnpj_cpf')
+        nom_cliente = request.form.get('nom_cliente')
+        cod_grupo_cliente = request.form.get('cod_grupo_cliente', 0)
+        des_grupo = request.form.get('des_grupo', 'SEM GRUPO')
+        
+        conn = get_db_connection()
+        if not conn:
+            flash('Erro de conexão', 'error')
+            return redirect(url_for('listar_clientes'))
+        
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO clientes (num_cnpj_cpf, nom_cliente, cod_grupo_cliente, des_grupo)
+                VALUES (%s, %s, %s, %s)
+            """, (num_cnpj_cpf, nom_cliente, cod_grupo_cliente, des_grupo))
+            
+            conn.commit()
+            flash(f'Cliente {nom_cliente} cadastrado com sucesso!', 'success')
+            return redirect(url_for('listar_clientes'))
+            
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            flash('CNPJ/CPF já existe', 'error')
+        except Exception as e:
+            conn.rollback()
+            flash(f'Erro ao cadastrar: {str(e)}', 'error')
+        finally:
+            conn.close()
+    
+    # Buscar grupos existentes para sugestões
+    conn = get_db_connection()
+    grupos = []
+    if conn:
+        try:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("""
+                SELECT DISTINCT des_grupo 
+                FROM clientes 
+                WHERE des_grupo IS NOT NULL AND des_grupo != '' AND des_grupo != 'SEM GRUPO'
+                ORDER BY des_grupo
+            """)
+            grupos = [row['des_grupo'] for row in cursor.fetchall()]
+        except:
+            pass
+        finally:
+            conn.close()
+    
+    return render_template('admin_cliente_form.html', cliente=None, grupos=grupos)
+
+@app.route('/clientes/editar/<int:id>', methods=['GET', 'POST'])
+def editar_cliente(id):
+    if 'admin_usuario' not in session:
+        return redirect(url_for('login'))
+    
+    conn = get_db_connection()
+    if not conn:
+        flash('Erro de conexão', 'error')
+        return redirect(url_for('listar_clientes'))
+    
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        if request.method == 'POST':
+            num_cnpj_cpf = request.form.get('num_cnpj_cpf')
+            nom_cliente = request.form.get('nom_cliente')
+            cod_grupo_cliente = request.form.get('cod_grupo_cliente', 0)
+            des_grupo = request.form.get('des_grupo', 'SEM GRUPO')
+            
+            cursor.execute("""
+                UPDATE clientes
+                SET num_cnpj_cpf = %s, nom_cliente = %s, 
+                    cod_grupo_cliente = %s, des_grupo = %s
+                WHERE id = %s
+            """, (num_cnpj_cpf, nom_cliente, cod_grupo_cliente, des_grupo, id))
+            
+            conn.commit()
+            flash('Cliente atualizado com sucesso!', 'success')
+            return redirect(url_for('listar_clientes'))
+        
+        # GET - carregar dados
+        cursor.execute("SELECT * FROM clientes WHERE id = %s", (id,))
+        cliente = cursor.fetchone()
+        
+        if not cliente:
+            flash('Cliente não encontrado', 'error')
+            return redirect(url_for('listar_clientes'))
+        
+        # Buscar grupos existentes
+        cursor.execute("""
+            SELECT DISTINCT des_grupo 
+            FROM clientes 
+            WHERE des_grupo IS NOT NULL AND des_grupo != '' AND des_grupo != 'SEM GRUPO'
+            ORDER BY des_grupo
+        """)
+        grupos = [row['des_grupo'] for row in cursor.fetchall()]
+        
+        return render_template('admin_cliente_form.html', cliente=cliente, grupos=grupos)
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        flash(f'Erro ao editar cliente: {str(e)}', 'error')
+        return redirect(url_for('listar_clientes'))
+    finally:
+        conn.close()
+
+@app.route('/clientes/deletar/<int:id>', methods=['POST'])
+def deletar_cliente(id):
+    if 'admin_usuario' not in session:
+        return jsonify({'success': False, 'message': 'Não autorizado'}), 401
+    
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'success': False, 'message': 'Erro de conexão'}), 500
+    
+    try:
+        cursor = conn.cursor()
+        
+        # Verificar se tem tarefas vinculadas
+        cursor.execute("""
+            SELECT COUNT(*) as total 
+            FROM tarefas_colaborador 
+            WHERE num_cnpj_cpf = (SELECT num_cnpj_cpf FROM clientes WHERE id = %s)
+        """, (id,))
+        result = cursor.fetchone()
+        
+        if result[0] > 0:
+            return jsonify({
+                'success': False,
+                'message': f'Não é possível deletar! Este cliente tem {result[0]} tarefa(s) vinculada(s).'
+            }), 400
+        
+        cursor.execute("DELETE FROM clientes WHERE id = %s", (id,))
+        conn.commit()
+        
+        return jsonify({'success': True, 'message': 'Cliente deletado com sucesso!'})
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        conn.close()
+
+# ========================================
 # API AUXILIAR
 # ========================================
 

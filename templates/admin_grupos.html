@@ -1,0 +1,113 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Grupos de Tarefas - Admin Booker{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2>🗂️ Grupos de Tarefas</h2>
+        <a href="{{ url_for('novo_grupo') }}" class="btn btn-primary">➕ Novo Grupo</a>
+    </div>
+
+    <!-- Filtros -->
+    <form method="get" class="filters">
+        <div class="form-row">
+            <div class="form-group">
+                <input type="text" name="busca" placeholder="🔍 Buscar por código ou nome..." 
+                       value="{{ filtros.busca if filtros.busca else '' }}"
+                       style="margin-bottom: 0;">
+            </div>
+            <div class="form-group">
+                <select name="departamento" style="margin-bottom: 0;">
+                    <option value="">🏢 Todos os Departamentos</option>
+                    {% for dept in departamentos %}
+                    <option value="{{ dept }}" {% if filtros.departamento == dept %}selected{% endif %}>
+                        {{ dept }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button type="submit" class="btn btn-primary">Buscar</button>
+                <a href="{{ url_for('listar_grupos') }}" class="btn btn-secondary">Limpar</a>
+            </div>
+        </div>
+    </form>
+
+    <!-- Tabela -->
+    {% if grupos %}
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Nome do Grupo</th>
+                    <th>Departamento</th>
+                    <th style="width: 200px; text-align: center;">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for grupo in grupos %}
+                <tr>
+                    <td><strong>{{ grupo.cod_grupo_tarefa }}</strong></td>
+                    <td>{{ grupo.nome_grupo_tarefa }}</td>
+                    <td>
+                        {% if grupo.departamento %}
+                            <span class="badge badge-info">{{ grupo.departamento }}</span>
+                        {% else %}
+                            <span style="color: #999;">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="actions" style="justify-content: center;">
+                            <a href="{{ url_for('editar_grupo', cod=grupo.cod_grupo_tarefa) }}" 
+                               class="btn btn-sm btn-secondary">✏️ Editar</a>
+                            <button onclick="deletarGrupo('{{ grupo.cod_grupo_tarefa }}', '{{ grupo.nome_grupo_tarefa }}')" 
+                                    class="btn btn-sm btn-danger">🗑️ Deletar</button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p style="margin-top: 15px; color: #666; font-size: 14px;">
+        📊 Total de grupos: <strong>{{ grupos|length }}</strong>
+    </p>
+    {% else %}
+    <div class="empty-state">
+        <h3>Nenhum grupo encontrado</h3>
+        <p>Adicione novos grupos de tarefas para organizar melhor seu trabalho.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function deletarGrupo(cod, nome) {
+    if (!confirm(`Tem certeza que deseja deletar o grupo "${nome}"?\n\nEsta ação não poderá ser desfeita se não houver tarefas vinculadas.`)) {
+        return;
+    }
+    
+    fetch(`/grupos/deletar/${cod}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert('❌ ' + data.message);
+        }
+    })
+    .catch(error => {
+        alert('❌ Erro ao deletar grupo: ' + error);
+    });
+}
+</script>
+{% endblock %}
